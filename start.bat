@@ -1,34 +1,37 @@
 @echo off
 setlocal
-cd /d "%~dp0"
 chcp 65001 >nul
+cd /d "%~dp0"
+
+rem Optional: --no-open   start without opening the browser
+set "OPENFLAG=--open"
+if /i "%~1"=="--no-open" set "OPENFLAG="
 
 where node >nul 2>&1
 if errorlevel 1 (
   echo.
-  echo [错误] 没找到 Node.js。
-  echo        请先安装 Node 20 或更高版本：https://nodejs.org/
+  echo [ERROR] Node.js not found. Install Node 20+ first: https://nodejs.org/
   echo.
   pause
   exit /b 1
 )
 
 for /f "delims=" %%v in ('node -v') do set "NODEVER=%%v"
-echo 使用 Node %NODEVER%
+echo Using Node %NODEVER%
 
 if not exist config.json (
   if exist config.example.json (
     copy config.example.json config.json >nul
-    echo [提示] 已根据 config.example.json 生成 config.json
-    echo        如果你的 Harness 不在默认路径，请先改里面的 profileDir / pluginDir
+    echo [INFO] Created config.json from config.example.json
+    echo        Edit profileDir / pluginDir inside it if Harness lives elsewhere.
     echo.
   )
 )
 
-echo 正在启动配置台，浏览器会自动打开（关掉这个窗口即停止服务）...
+echo Starting bot-console... close this window to stop the service.
 echo.
-node src/server.mjs --open
+node src/server.mjs %OPENFLAG%
 
 echo.
-echo 服务已退出。
+echo Service stopped.
 pause
