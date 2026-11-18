@@ -74,6 +74,15 @@
   </div>
 
   <div class="panel">
+    <h2>服务</h2>
+    <div class="hint">这个配置台是个本地网页服务，关掉浏览器不会停止它。要彻底关闭：</div>
+    <div class="actions">
+      <button class="ghost" id="shutdown">关闭服务</button>
+      <span class="msg" id="shutdownMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>人设（Markdown）</h2>
     <textarea id="persona" spellcheck="false" placeholder="在这里写机器人的人设……"></textarea>
     <div class="actions">
@@ -265,6 +274,16 @@ $('saveConfig').onclick = async () => {
     msg('configMsg', error.message, false)
   } finally {
     $('saveConfig').disabled = false
+  }
+}
+
+$('shutdown').onclick = async () => {
+  if (!confirm('确定关闭服务？关闭后机器人配置不再可改，但机器人本身照常运行。')) return
+  try {
+    await api('/api/shutdown', { method: 'POST' })
+    document.body.innerHTML = '<div style="padding:40px;font:16px/1.8 system-ui;color:#e6e9ef">服务已关闭，可以关闭这个窗口了。</div>'
+  } catch (error) {
+    msg('shutdownMsg', error.message, false)
   }
 }
 

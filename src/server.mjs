@@ -375,6 +375,13 @@ function safeEqual(a, b) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
+
+  // 无鉴权的健康检查：只回答“活着”，用于启动器探测，不暴露任何配置
+  if (req.method === 'GET' && url.pathname === '/healthz') {
+    sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()) })
+    return
+  }
+
   if (!authorized(req)) {
     res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
     res.end('未授权：请带上正确的 token（.?token=...）')
@@ -434,6 +441,13 @@ const server = createServer(async (req, res) => {
       const next = upsertRow(row.text, config.rowId, config.packageName, row.config)
       writeTextAtomic(paths.patch(), next.text)
       sendJson(res, 200, { ok: true })
+      return
+    }
+
+    // 让用户在没有终端的情况下也能关掉服务（界面上的“关闭服务”按钮）
+    if (req.method === 'POST' && url.pathname === '/api/shutdown') {
+      sendJson(res, 200, { ok: true })
+      setTimeout(() => process.exit(0), 300)
       return
     }
 
