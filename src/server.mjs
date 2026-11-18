@@ -475,6 +475,22 @@ function openBrowser(url) {
   }
 }
 
+// 端口被占用时给出人话，而不是一串堆栈
+server.on('error', (error) => {
+  if (error?.code === 'EADDRINUSE') {
+    const url = `http://${config.host}:${config.port}/?token=${token}`
+    console.error('')
+    console.error(`端口 ${config.port} 已被占用，无法启动。`)
+    console.error('  最常见的情况：已经有一个 bot-console 在跑了。直接打开这个地址即可：')
+    console.error(`  ${url}`)
+    console.error('  如果打不开，说明占用端口的是别的程序——改 config.json 里的 port，或先关掉那个程序。')
+    console.error('')
+    process.exit(1)
+  }
+  console.error('服务启动失败：', error)
+  process.exit(1)
+})
+
 server.listen(config.port, config.host, () => {
   const url = `http://${config.host}:${config.port}/?token=${token}`
   console.log('bot-console 已启动')
