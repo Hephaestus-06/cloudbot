@@ -465,6 +465,7 @@ server.listen(config.port, config.host, () => {
   const url = `http://${config.host}:${config.port}/?token=${token}`
   console.log('bot-console 已启动')
   console.log(`  地址: ${url}`)
+  console.log('  提示: 如果浏览器没有自动打开，把上面这个地址复制到浏览器即可（地址里带访问令牌，别外传）')
   console.log(`  profile: ${resolve(config.profileDir)}`)
   console.log(`  plugin : ${resolve(config.pluginDir)}`)
   console.log(`  配置  : ${config._file}`)
