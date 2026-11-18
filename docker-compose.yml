@@ -1,0 +1,33 @@
+# 服务器上跑配置台的参考 compose。
+# 注意：配置台是「改文件」的工具，所以必须把宿主机上
+#   - Harness 的 profile 目录（含 cordis.patch.yml）
+#   - 机器人插件目录（含 persona.md）
+# 挂进容器，否则改的是容器里的副本，没有意义。
+#
+# 用法：
+#   BOT_CONSOLE_TOKEN=换成你的口令 docker compose up -d --build
+#   然后只在本机访问：ssh -L 8787:127.0.0.1:8787 user@server
+
+services:
+  console:
+    build: .
+    container_name: cloudbot-console
+    restart: unless-stopped
+    ports:
+      # 只绑回环，不要写成 0.0.0.0:8787
+      - "127.0.0.1:8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      # 下面两个是容器内路径，靠 volumes 映射到宿主机真实目录
+      PROFILE_DIR: /data/profile
+      PLUGIN_DIR: /data/plugin
+      # 宿主机上的 NapCat；Linux 下也可以直接用宿主机内网 IP
+      ONEBOT_WS: ws://host.docker.internal:3001
+      BOT_CONSOLE_TOKEN: ${BOT_CONSOLE_TOKEN:-please-change-me}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # 把左边改成你服务器上的真实路径
+      - /root/.dsh/profiles/desktop:/data/profile
+      - /root/qq-bridge:/data/plugin

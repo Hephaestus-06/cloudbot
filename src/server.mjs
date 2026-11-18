@@ -12,6 +12,7 @@
 
 import { createServer } from 'node:http'
 import { createHash, randomBytes } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,7 +43,14 @@ function loadConfig() {
   const saved = existsSync(file)
     ? JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
     : {}
-  return { ...DEFAULT_CONFIG, ...saved, _file: file }
+  // 环境变量优先于配置文件，方便 Docker / systemd 部署
+  const fromEnv = {}
+  if (process.env.PORT) fromEnv.port = Number(process.env.PORT)
+  if (process.env.HOST) fromEnv.host = process.env.HOST
+  if (process.env.PROFILE_DIR) fromEnv.profileDir = process.env.PROFILE_DIR
+  if (process.env.PLUGIN_DIR) fromEnv.pluginDir = process.env.PLUGIN_DIR
+  if (process.env.ONEBOT_WS) fromEnv.oneBotWs = process.env.ONEBOT_WS
+  return { ...DEFAULT_CONFIG, ...saved, ...fromEnv, _file: file }
 }
 
 const config = loadConfig()
@@ -435,6 +443,24 @@ const server = createServer(async (req, res) => {
   }
 })
 
+/** 用系统默认浏览器打开控制台地址（--open 时使用）。 */
+function openBrowser(url) {
+  const platform = process.platform
+  const command = platform === 'win32'
+    ? `start "" "${url}"`
+    : platform === 'darwin'
+      ? `open "${url}"`
+      : `xdg-open "${url}"`
+  try {
+    spawn(platform === 'win32' ? 'cmd' : 'sh', platform === 'win32' ? ['/c', command] : ['-c', command], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref()
+  } catch {
+    /* 打开失败不影响服务，地址已经打印出来了 */
+  }
+}
+
 server.listen(config.port, config.host, () => {
   const url = `http://${config.host}:${config.port}/?token=${token}`
   console.log('bot-console 已启动')
@@ -442,4 +468,5 @@ server.listen(config.port, config.host, () => {
   console.log(`  profile: ${resolve(config.profileDir)}`)
   console.log(`  plugin : ${resolve(config.pluginDir)}`)
   console.log(`  配置  : ${config._file}`)
+  if (process.argv.includes('--open')) openBrowser(url)
 })

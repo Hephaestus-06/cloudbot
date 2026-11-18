@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+config.json
+.token
+*.log
+docs
+tests
+start.bat
+start.sh
+docker-compose.yml

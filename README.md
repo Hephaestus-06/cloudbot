@@ -12,25 +12,56 @@
 | 服务器部署 | ⏳ 等机器 | [方案草稿](docs/SERVER-DEPLOY.md) |
 | 机器人本体（协议端 + 桥接） | 本地运行中 | 迁移时并入 |
 
+## 怎么启动
+
+三种方式，按场景选。
+
+### 1. 双击启动（Windows，最省事）
+
+双击 **`start.bat`**：自动检查 Node、首次运行会从模板生成 `config.json`、启动服务并自动打开浏览器。
+
+### 2. 命令行（任意系统）
+
+```bash
+npm start              # = node src/server.mjs
+npm start -- --open    # 顺便自动打开浏览器
+```
+
+macOS / Linux 也可以用 `./start.sh`（首次先 `chmod +x start.sh`）。
+
+启动后控制台会打印带 token 的地址，第一次运行还会生成 `.token` 文件：
+
+```
+bot-console 已启动
+  地址: http://127.0.0.1:8787/?token=xxxxxxxx
+```
+
+> 需要 **Node 20+**（用到了全局 `fetch` / `WebSocket`）。没有 npm 依赖，**不需要 `npm install`**。
+
+### 3. Docker（服务器上用）
+
+```bash
+BOT_CONSOLE_TOKEN=换成你的口令 docker compose up -d --build
+```
+
+关键约束：配置台是「改文件」的工具，`docker-compose.yml` 里必须把宿主机上真实的 **profile 目录**（含 `cordis.patch.yml`）和**插件目录**（含 `persona.md`）挂进容器，否则改的是容器里的副本。见文件内注释与 [docs/SERVER-DEPLOY.md](docs/SERVER-DEPLOY.md)。
+
 ## 远程配置台
 
 一个零依赖的本地网页服务：浏览器里改人设和配置，保存即生效（写回 Harness 的配置层并触发重载）。
-
-```bash
-cp config.example.json config.json   # 按自己的路径改
-node src/server.mjs                  # 首次启动会生成 .token 并打印带 token 的地址
-```
 
 能力、安全边界、目录说明见 [docs/CONSOLE.md](docs/CONSOLE.md)。
 
 ## 目录
 
 ```
+start.bat / start.sh          一键启动脚本
 src/server.mjs                配置台服务端（Node 内置模块，零依赖）
 web/index.html                配置台界面（单页，无构建）
 tests/persona-guard.test.mjs  人设写入边界测试
 docs/CONSOLE.md               配置台说明
 docs/SERVER-DEPLOY.md         服务器迁移方案（草稿）
+Dockerfile / docker-compose.yml  服务器上的容器化启动
 config.example.json           配置模板（config.json / .token 不入库）
 ```
 
