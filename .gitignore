@@ -1,0 +1,18 @@
+# 运行数据
+config.json
+.token
+*.log
+
+# 沙箱 / 测试临时目录
+.sandbox/
+.sandbox-outside/
+
+# 依赖（本项目目前零依赖，留作以后）
+node_modules/
+pnpm-lock.yaml
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

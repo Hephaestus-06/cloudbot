@@ -1,0 +1,14 @@
+{
+  "name": "bot-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remote configuration console for the QQ bot (persona, whitelist, feature switches)",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

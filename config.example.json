@@ -1,0 +1,7 @@
+{
+  "port": 8787,
+  "host": "127.0.0.1",
+  "profileDir": "C:/Users/RUAN/.dsh/profiles/desktop",
+  "pluginDir": "D:/deepseek harness desktop/qq-bridge",
+  "oneBotWs": "ws://127.0.0.1:3001"
+}

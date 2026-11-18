@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bot 配置台</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d222b;
+    --line: #2a303b;
+    --text: #e6e9ef;
+    --muted: #95a0b3;
+    --accent: #4f8cff;
+    --ok: #35c07a;
+    --bad: #ef6461;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 20px; font-size: 13px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+  .status { display: flex; gap: 12px; flex-wrap: wrap; }
+  .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; min-width: 150px; }
+  .chip .k { color: var(--muted); font-size: 12px; }
+  .chip .v { font-size: 16px; margin-top: 2px; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
+  input[type="text"], textarea {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 11px; font: inherit;
+  }
+  textarea { min-height: 320px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.7; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .row { margin-bottom: 8px; }
+  .switch { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .switch input { width: 16px; height: 16px; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 400; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .msg { font-size: 13px; }
+  .msg.ok { color: var(--ok); }
+  .msg.bad { color: var(--bad); }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bot 配置台</h1>
+  <div class="sub">改完保存即可生效（配置会触发重载，约 1–2 秒）。人设改动对下一条消息生效。</div>
+
+  <div class="panel">
+    <h2>状态</h2>
+    <div class="status" id="status">
+      <div class="chip"><div class="k">加载中…</div><div class="v">—</div></div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="refresh">重新检查</button>
+      <span class="hint" id="checkedAt"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>人设（Markdown）</h2>
+    <textarea id="persona" spellcheck="false" placeholder="在这里写机器人的人设……"></textarea>
+    <div class="actions">
+      <button id="savePersona">保存人设</button>
+      <span class="hint" id="personaMeta"></span>
+      <span class="msg" id="personaMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>配置</h2>
+    <div class="grid">
+      <div class="row">
+        <label>允许私聊的 QQ（逗号分隔）</label>
+        <input type="text" id="allowedUsers" />
+      </div>
+      <div class="row">
+        <label>允许的群号（逗号分隔）</label>
+        <input type="text" id="allowedGroups" />
+      </div>
+      <div class="row">
+        <label>管理员 QQ（逗号分隔）</label>
+        <input type="text" id="admins" />
+      </div>
+      <div class="row">
+        <label>不在白名单的私聊通知给（逗号分隔）</label>
+        <input type="text" id="notifyUsers" />
+      </div>
+      <div class="row">
+        <label>群聊里可插话的群（逗号分隔）</label>
+        <input type="text" id="ambientGroups" />
+      </div>
+      <div class="row">
+        <label>模型通道（provider / model）</label>
+        <input type="text" id="botProvider" placeholder="deepseek-bot" />
+        <input type="text" id="botModel" placeholder="deepseek-chat" style="margin-top:6px" />
+      </div>
+      <div class="row">
+        <label>主动说话间隔（分钟）</label>
+        <input type="text" id="proactiveQuietMinutes" />
+      </div>
+      <div class="row">
+        <label>主动说话每小时上限</label>
+        <input type="text" id="proactiveMaxPerHour" />
+      </div>
+      <div class="row">
+        <label>群聊插话概率（0–1）</label>
+        <input type="text" id="ambientChance" />
+      </div>
+      <div class="row">
+        <label>群聊插话每小时上限</label>
+        <input type="text" id="ambientMaxPerHour" />
+      </div>
+      <div class="row">
+        <label>单条气泡字数上限</label>
+        <input type="text" id="bubbleMaxChars" />
+      </div>
+      <div class="row">
+        <label>一次最多几条气泡</label>
+        <input type="text" id="maxBubbles" />
+      </div>
+    </div>
+
+    <div class="switch"><input type="checkbox" id="chatMode" /><label for="chatMode" style="margin:0">启用人格（替换默认系统提示）</label></div>
+    <div class="switch"><input type="checkbox" id="proactiveEnabled" /><label for="proactiveEnabled" style="margin:0">允许主动说话</label></div>
+    <div class="switch"><input type="checkbox" id="autoApproveFriend" /><label for="autoApproveFriend" style="margin:0">自动通过好友申请（关掉则推给你审批）</label></div>
+    <div class="switch"><input type="checkbox" id="notifyFriendRequests" /><label for="notifyFriendRequests" style="margin:0">好友申请推给我审批</label></div>
+    <div class="switch"><input type="checkbox" id="typingIndicator" /><label for="typingIndicator" style="margin:0">显示「正在输入」</label></div>
+    <div class="switch"><input type="checkbox" id="pokeBack" /><label for="pokeBack" style="margin:0">被戳时戳回去</label></div>
+
+    <div class="actions">
+      <button id="saveConfig">保存配置</button>
+      <button class="ghost" id="reload">只触发重载</button>
+      <span class="msg" id="configMsg"></span>
+    </div>
+  </div>
+
+  <div class="sub" id="paths"></div>
+</div>
+
+<script>
+const token = new URLSearchParams(location.search).get('token') || localStorage.getItem('botConsoleToken') || ''
+if (token) localStorage.setItem('botConsoleToken', token)
+
+const LIST_FIELDS = ['allowedUsers', 'allowedGroups', 'admins', 'notifyUsers', 'ambientGroups']
+const TEXT_FIELDS = ['botProvider', 'botModel']
+const NUM_FIELDS = ['proactiveQuietMinutes', 'proactiveMaxPerHour', 'ambientChance', 'ambientMaxPerHour', 'bubbleMaxChars', 'maxBubbles']
+const BOOL_FIELDS = ['chatMode', 'proactiveEnabled', 'autoApproveFriend', 'notifyFriendRequests', 'typingIndicator', 'pokeBack']
+
+const $ = (id) => document.getElementById(id)
+
+function msg(id, text, ok) {
+  const el = $(id)
+  el.textContent = text
+  el.className = 'msg ' + (ok ? 'ok' : 'bad')
+  if (text) setTimeout(() => { if (el.textContent === text) { el.textContent = ''; el.className = 'msg' } }, 5000)
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'x-token': token, 'content-type': 'application/json', ...(options.headers || {}) },
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error || `${response.status}`)
+  return body
+}
+
+function renderStatus(state) {
+  const s = state.status
+  const port = s.portUp ? '<span class="ok">在监听</span>' : '<span class="bad">未监听</span>'
+  const online = s.online ? '<span class="ok">在线</span>' : '<span class="bad">离线</span>'
+  $('status').innerHTML = `
+    <div class="chip"><div class="k">OneBot 端口 ${s.oneBotPort}</div><div class="v">${port}</div></div>
+    <div class="chip"><div class="k">QQ 账号</div><div class="v">${online}</div></div>
+    <div class="chip"><div class="k">配置行</div><div class="v">${state.rowFound ? (state.rowBroken ? '<span class="bad">解析失败</span>' : '正常') : '未写入'}</div></div>
+  `
+  $('checkedAt').textContent = '检查时间 ' + new Date(s.checkedAt).toLocaleTimeString('zh-CN')
+  $('paths').innerHTML = `人设：<code>${state.paths.persona}</code><br/>配置：<code>${state.paths.patch}</code>`
+}
+
+function fillForm(state) {
+  const cfg = state.config || {}
+  for (const key of LIST_FIELDS) $(key).value = Array.isArray(cfg[key]) ? cfg[key].join(', ') : ''
+  for (const key of TEXT_FIELDS) $(key).value = cfg[key] ?? ''
+  for (const key of NUM_FIELDS) $(key).value = cfg[key] ?? ''
+  for (const key of BOOL_FIELDS) $(key).checked = cfg[key] === true
+  const editable = state.persona?.editable !== false
+  $('persona').value = state.persona?.text ?? ''
+  $('persona').readOnly = !editable
+  $('savePersona').disabled = !editable
+  $('personaMeta').textContent = editable
+    ? `${state.persona?.bytes ?? 0} 字节 · ${state.paths.persona}`
+    : `只读（${state.persona?.reason || '位置不在插件目录内'}）`
+}
+
+async function loadState() {
+  try {
+    const state = await api('/api/state')
+    renderStatus(state)
+    fillForm(state)
+  } catch (error) {
+    $('status').innerHTML = `<div class="chip"><div class="k">读取失败</div><div class="v bad">${error.message}</div></div>`
+  }
+}
+
+function collectPatch() {
+  const patch = {}
+  for (const key of LIST_FIELDS) {
+    patch[key] = $(key).value.split(/[,，\s]+/).map((v) => v.trim()).filter(Boolean)
+  }
+  for (const key of TEXT_FIELDS) patch[key] = $(key).value.trim()
+  for (const key of NUM_FIELDS) {
+    const raw = $(key).value.trim()
+    if (raw === '') continue
+    patch[key] = key === 'ambientChance' ? Number(raw) : Number.parseInt(raw, 10)
+  }
+  for (const key of BOOL_FIELDS) patch[key] = $(key).checked
+  return patch
+}
+
+$('refresh').onclick = loadState
+$('reload').onclick = async () => {
+  try { await api('/api/reload', { method: 'POST' }); msg('configMsg', '已触发重载', true) }
+  catch (error) { msg('configMsg', error.message, false) }
+}
+
+$('savePersona').onclick = async () => {
+  $('savePersona').disabled = true
+  try {
+    const body = await api('/api/persona', { method: 'POST', body: JSON.stringify({ text: $('persona').value }) })
+    msg('personaMsg', `已保存（${body.bytes} 字节）`, true)
+    $('personaMeta').textContent = `${body.bytes} 字节`
+  } catch (error) {
+    msg('personaMsg', error.message, false)
+  } finally {
+    $('savePersona').disabled = false
+  }
+}
+
+$('saveConfig').onclick = async () => {
+  $('saveConfig').disabled = true
+  try {
+    const patch = collectPatch()
+    const body = await api('/api/config', { method: 'POST', body: JSON.stringify({ patch }) })
+    msg('configMsg', `已保存 ${body.changed.length} 项，正在重载…`, true)
+    setTimeout(loadState, 2500)
+  } catch (error) {
+    msg('configMsg', error.message, false)
+  } finally {
+    $('saveConfig').disabled = false
+  }
+}
+
+loadState()
+</script>
+</body>
+</html>

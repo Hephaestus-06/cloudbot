@@ -1,0 +1,5 @@
+# 统一用 LF，避免 Windows / Linux 混用时整仓 diff
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
