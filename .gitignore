@@ -6,6 +6,7 @@ config.json
 # 沙箱 / 测试临时目录
 .sandbox/
 .sandbox-outside/
+.cli-test/
 
 # 依赖（本项目目前零依赖，留作以后）
 node_modules/
