@@ -16,3 +16,6 @@ pnpm-lock.yaml
 .idea/
 .DS_Store
 Thumbs.db
+
+# 内部资料/客户文档，不入公开仓库
+.private/
