@@ -1,0 +1,105 @@
+# QQ bridge: one Host row that talks OneBot 11 (NapCat) and turns QQ messages
+# into Harness agent turns. Edit `config` freely; it survives upgrades.
+- insert:
+    - id: qq-bridge
+      name: '@local/dsh-qq-bridge'
+      config:
+        # OneBot 11 forward WebSocket exposed by NapCat.
+        wsUrl: 'ws://127.0.0.1:3001'
+        accessToken: ''
+        # Optional HTTP API base (only used when the WebSocket is down).
+        apiHttpUrl: ''
+        # Who may talk to the bot. Empty lists mean "nobody yet": an unauthorized
+        # chat receives a hint containing its QQ/group id, which you add below.
+        allowAll: false
+        allowedUsers: ['100000001']
+        allowedGroups: ['200000001']
+        # 管理员：永远被授权，且“私聊”时拥有完整能力（工具 + 管理指令）。
+        # 群聊里不携带管理员身份，避免公开发言的人指挥它动这台机器。
+        admins: ['100000001']
+        # 被管理员静音的会话，写成 group:群号 / private:QQ号
+        mutedChats: []
+        requireAtInGroup: true
+        # 被拒的私聊不发提示给陌生人，改成把这条“谁来敲门”的通知发到下面这些号
+        notifyUsers: ['100000001']
+        deniedNotifyText: '有人私聊我，我按规则没回他。'
+        # Where QQ sessions run. Empty means the Host default workspace directory.
+        cwd: 'D:/deepseek harness desktop'
+        # 单个对话的工作区覆盖（管理员私聊发 /cwd D:/目录 会自动写到这里）
+        # 形如：{ "private:100000001": "D:/某项目" }
+        conversationCwds: {}
+        agentPreset: ''
+        clientTimeZone: 'Asia/Shanghai'
+        # 会话 id 前缀：改一次（例如 qq → qq2）就等于把所有 QQ 对话重置重开
+        sessionPrefix: 'qq4'
+
+        # ---- 机器人独立的模型通道 ------------------------------------------
+        # 留空 = 跟随 Harness 当前默认模型（和 GUI 共用）。
+        # 填了就用 provider/model 覆盖 QQ 会话的每一次请求，GUI 的默认模型不受影响。
+        # provider 名字必须是 llm-pi-ai 里配置过的路由（用 /route 指令可列出）。
+        botProvider: 'deepseek-bot'
+        botModel: 'deepseek-chat'
+
+        # ---- 聊天人格 ----------------------------------------------------
+        # chatMode: 把 QQ 会话的系统提示词整体替换成聊天人格（不再像编码助手）
+        chatMode: true
+        # persona: 留空 = 使用插件内置的中文聊天人格；想换成别的角色就在这里整段覆盖
+        persona: ''
+        # personaFile: 人格文件。直接改/覆盖这个 md 就行，不用动配置。
+        # 改完保存 → 下一条消息自动生效（已在聊的会话会重建提示词）。
+        personaFile: ''
+        # chatTools: QQ 会话只保留这些工具；留空 [] = 一个工具都不给（纯聊天）
+        chatTools: ['web_search', 'web_fetch']
+        # 不把工作目录、运行环境这类“后台信息”塞进提示词
+        suppressRuntimeContext: true
+
+        # ---- 回复形态（活人感）-------------------------------------------
+        # 单条气泡最多多少字，超了就按句号拆成几条发
+        bubbleMaxChars: 220
+        # 一次最多拆成几条气泡
+        maxBubbles: 4
+        # 模拟打字停顿（按字数估一个 0.7~3.5 秒的等待）
+        typingSimulate: true
+        chunkDelayMs: 500
+        # 迟迟没回时才补一句“嗯…我想想”，避免每句都机械回执
+        ackEnabled: true
+        ackDelayMs: 6000
+        ackText: '嗯…我想想'
+        timeoutMs: 900000
+
+        # ---- 主动说话 ----------------------------------------------------
+        # 安静够久之后，给它一次“主动开口”的机会；模型可以回 SKIP 表示不说。
+        proactiveEnabled: true
+        proactiveQuietMinutes: 60
+        proactiveCheckMs: 300000
+        proactiveMaxPerHour: 1
+        proactivePrivateOnly: true
+        proactivePrompt: '（系统：这个私聊已经安静了 {minutes} 分钟。你想主动找对方说句话就说，不想打扰就只回复 SKIP。）'
+
+        # ---- 好友申请 / 群邀请 -------------------------------------------
+        # 默认关闭：自动通过好友风险最高，确认过再加口令再打开。
+        autoApproveFriend: false
+        autoApproveGroup: false
+        # 关掉自动通过时，把「有人加好友」推给管理员人工决定；/yes 通过会同时加进白名单
+        notifyFriendRequests: true
+        # 验证消息里必须包含这串字才通过；留空 = 不校验口令
+        approveSecret: ''
+        approveMaxPerHour: 3
+        # true = 必须和你至少在同一个群里才通过
+        approveRequireCommonGroup: false
+        approveGreeting: '嗨，我是刚加你的那个，随便聊两句呗～'
+
+        # ---- 小动作 ------------------------------------------------------
+        typingIndicator: true
+        pokeBack: true
+        # 收到私聊时偶尔贴个表情回应（NapCat 扩展接口，失败会自动关掉）
+        emojiReaction: false
+
+        # ---- 群聊里不 @ 也偶尔接话 ----------------------------------------
+        # 只有同时出现在 allowedGroups 和这里的群，才会“没被 @ 也可能插一句”
+        ambientGroups: ['200000001']
+        ambientChance: 0.15
+        ambientMinGapMinutes: 3
+        ambientMaxPerHour: 4
+        ambientContextMessages: 8
+        ambientContextMinutes: 30

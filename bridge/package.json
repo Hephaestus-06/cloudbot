@@ -1,0 +1,39 @@
+{
+  "name": "@local/dsh-qq-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bridge QQ chats (OneBot 11 / NapCat) to DeepSeek Harness agent sessions",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hephaestus-06/cloudbot.git",
+    "directory": "bridge"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "qq",
+    "onebot",
+    "napcat",
+    "bridge"
+  ]
+}
