@@ -21,7 +21,7 @@ D:\deepseek harness desktop\qq-bridge\persona.md
 两种都行，任选其一：
 
 1. QQ 里发：`/persona file D:/你的路径/某个.md`
-2. 改 `cordis.patch.yml` 里的 `personaFile: '...'`
+2. 改 `cordis.patch.yml` 里的 `personaFile: ''`
 
 优先级：`persona`（内联文本）> `personaFile`（文件）> 插件内置默认。
 

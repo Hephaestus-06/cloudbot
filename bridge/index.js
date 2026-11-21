@@ -58,9 +58,12 @@ const DEFAULT_PERSONA = `你叫小D，在 QQ 上跟人聊天。你是个有自�
 
 const ADMIN_FOOTER = `【管理员模式】对方是这台机器的管理员，你有完整权限：他让你查文件、跑命令、翻日志、改配置、排查问题时，直接用工具去做，工具参数自己看，做完用一两句话简短汇报，别贴 Markdown 和表格。没让你干活的时候，就正常聊天，别主动扯仓库和任务。`
 
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 
 /** Where this profile keeps `cordis.patch.yml`, the layer that survives upgrades. */
 function profileDirectory() {
@@ -147,6 +150,22 @@ const DEFAULTS = {
   queueLimit: 4,
   reconnectMinMs: 1000,
   reconnectMaxMs: 30000,
+  // 聊天归档：按 dsh-qq-extras 的 collector 能读的格式追加写
+  //   [HH:MM:SS] private:123 管理员 主人：文本
+  //   [HH:MM:SS] private:123 agent 回复：文本
+  activityLog: true,
+  activityLogFile: '',
+  // 长期记忆（自研，零依赖）：消息归档 + 关键词检索 + 事实笔记
+  memoryEnabled: true,
+  memoryDir: '',
+  memoryContextMessages: 10,
+  memoryInject: true,
+  memoryMaxChars: 1200,
+  // 好感度：按人存一份（私聊和群里的同一个人共用）
+  affinityEnabled: true,
+  // 表情包：本地图库，子目录名就是标签
+  stickerDir: '',
+  stickerAutoChance: 0,
 
   // 主动说话：定时器只负责给机会，模型可以选择 SKIP 不说话
   proactiveEnabled: false,
@@ -267,6 +286,16 @@ function normalizeConfig(raw) {
     stoppedText: asString(input.stoppedText, DEFAULTS.stoppedText),
     timeoutMs: asInt(input.timeoutMs, DEFAULTS.timeoutMs, 10000, 6 * 60 * 60 * 1000),
     queueLimit: asInt(input.queueLimit, DEFAULTS.queueLimit, 1, 50),
+    activityLog: asBool(input.activityLog, DEFAULTS.activityLog),
+    activityLogFile: asString(input.activityLogFile, DEFAULTS.activityLogFile),
+    memoryEnabled: asBool(input.memoryEnabled, DEFAULTS.memoryEnabled),
+    memoryDir: asString(input.memoryDir, DEFAULTS.memoryDir),
+    memoryContextMessages: asInt(input.memoryContextMessages, DEFAULTS.memoryContextMessages, 0, 50),
+    memoryInject: asBool(input.memoryInject, DEFAULTS.memoryInject),
+    memoryMaxChars: asInt(input.memoryMaxChars, DEFAULTS.memoryMaxChars, 200, 8000),
+    affinityEnabled: asBool(input.affinityEnabled, DEFAULTS.affinityEnabled),
+    stickerDir: asString(input.stickerDir, DEFAULTS.stickerDir),
+    stickerAutoChance: Math.min(1, Math.max(0, Number(input.stickerAutoChance ?? DEFAULTS.stickerAutoChance) || 0)),
     reconnectMinMs: asInt(input.reconnectMinMs, DEFAULTS.reconnectMinMs, 200, 60000),
     reconnectMaxMs: asInt(input.reconnectMaxMs, DEFAULTS.reconnectMaxMs, 1000, 300000),
     botProvider: asString(input.botProvider, DEFAULTS.botProvider),
@@ -712,6 +741,50 @@ export function apply(ctx, rawConfig) {
     }
   }
 
+  /** Send raw OneBot message segments (music card, image, record...). */
+  async function sendSegments(target, segments) {
+    const message = Array.isArray(segments) ? segments : [segments]
+    if (!message.length) return
+    if (target.type === 'group') {
+      await client.call('send_group_msg', { group_id: Number(target.id), message })
+    } else {
+      await client.call('send_private_msg', { user_id: Number(target.id), message })
+    }
+  }
+
+  /** QQ 音乐搜索（公开接口，无需鉴权）。 */
+  async function searchQQMusic(keyword, limit = 3) {
+    const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&p=1&n=${limit}&w=${encodeURIComponent(keyword)}`
+    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', referer: 'https://y.qq.com/' } })
+    const text = await res.text()
+    if (!res.ok) throw new Error(`搜索失败 HTTP ${res.status}`)
+    const json = JSON.parse(text.trim().replace(/^callback\(/, '').replace(/\)$/, ''))
+    return (json?.data?.song?.list ?? []).map((song) => ({
+      mid: song.songmid,
+      name: song.songname,
+      singer: (song.singer ?? []).map((part) => part.name).join('/'),
+    }))
+  }
+
+  /** 取本条消息里被 @ 的人（群聊用）。 */
+  function atTargets(event) {
+    const list = Array.isArray(event?.message) ? event.message : []
+    const ids = []
+    for (const segment of list) {
+      if (segment?.type === 'at' && segment.data?.qq) ids.push(String(segment.data.qq))
+    }
+    return ids
+  }
+
+  /** 被回复的那条消息的 id（用于撤回）。 */
+  function repliedId(event) {
+    const list = Array.isArray(event?.message) ? event.message : []
+    for (const segment of list) {
+      if (segment?.type === 'reply' && segment.data?.id) return String(segment.data.id)
+    }
+    return ''
+  }
+
   /** Best-effort "正在输入…"; the API is a NapCat extension, so give up after one failure. */
   async function sendTyping(target) {
     if (!typingSupported) return
@@ -723,6 +796,319 @@ export function apply(ctx, rawConfig) {
     } catch (error) {
       typingSupported = false
       logger.warn(`qq-bridge: set_input_status unavailable, typing indicator off: ${errorText(error)}`)
+    }
+  }
+
+  // ---- 长期记忆 ---------------------------------------------------------
+  // 每个会话的消息与"事实"各存一个 JSONL 文件；检索是关键词匹配，够用且零依赖。
+
+  function memoryFile(name) {
+    return join(config.memoryDir || join(PLUGIN_DIR, 'state', 'memory'), name)
+  }
+
+  function memoryAppend(file, entry) {
+    if (!config.memoryEnabled) return
+    try {
+      const target = memoryFile(file)
+      mkdirSync(dirname(target), { recursive: true })
+      appendFileSync(target, `${JSON.stringify(entry)}\n`, 'utf8')
+    } catch (error) {
+      logger.warn(`qq-bridge: memory write failed: ${errorText(error)}`)
+    }
+  }
+
+  /** 记一条聊天记录（收发都记，所有用户都记）。 */
+  function memoryRemember(conversationKey, role, name, text) {
+    const body = String(text ?? '').replace(/\s+/g, ' ').trim()
+    if (!body) return
+    memoryAppend('messages.jsonl', {
+      ts: new Date().toISOString(),
+      key: conversationKey,
+      role,
+      name: String(name ?? '').slice(0, 40),
+      text: body.slice(0, 2000),
+    })
+  }
+
+  function memoryLines(file) {
+    try {
+      const target = memoryFile(file)
+      if (!existsSync(target)) return []
+      return readFileSync(target, 'utf8').split(/\r?\n/).filter(Boolean).slice(-4000)
+    } catch {
+      return []
+    }
+  }
+
+  function memoryEntries(file) {
+    const out = []
+    for (const line of memoryLines(file)) {
+      try {
+        out.push(JSON.parse(line))
+      } catch {
+        /* 跳过坏行 */
+      }
+    }
+    return out
+  }
+
+  function memoryRecent(conversationKey, limit) {
+    return memoryEntries('messages.jsonl').filter((e) => e.key === conversationKey).slice(-limit)
+  }
+
+  function memorySearch(conversationKey, query, limit) {
+    const needle = String(query ?? '').toLowerCase().trim()
+    if (!needle) return []
+    return memoryEntries('messages.jsonl')
+      .filter((e) => (!conversationKey || e.key === conversationKey) && String(e.text ?? '').toLowerCase().includes(needle))
+      .slice(-limit)
+  }
+
+  function memoryRememberFact(conversationKey, text) {
+    const body = String(text ?? '').replace(/\s+/g, ' ').trim()
+    if (!body) return false
+    memoryAppend('facts.jsonl', { ts: new Date().toISOString(), key: conversationKey, text: body.slice(0, 500) })
+    return true
+  }
+
+  function memoryFacts(conversationKey) {
+    return memoryEntries('facts.jsonl').filter((e) => !conversationKey || e.key === conversationKey).slice(-20)
+  }
+
+  function memorySpeaker(entry) {
+    return entry.role === 'agent' ? '你' : (entry.name || '对方')
+  }
+
+  function memoryLine(entry) {
+    const when = typeof entry.ts === 'string' ? entry.ts.slice(5, 16).replace('T', ' ') : ''
+    return `${when ? `[${when}] ` : ''}${memorySpeaker(entry)}：${entry.text}`
+  }
+
+  // ---- 好感度 -----------------------------------------------------------
+  // 按 QQ 号存一份（私聊/群共用），0-100，初始 50。规则很轻：
+  // 常聊 +1（每天最多 +5）、被夸 +2、被凶 -3、久不联系会慢慢生疏、记下对方的事 +1。
+
+  const AFFINITY_PRAISE = ['喜欢你', '好厉害', '厉害', '好棒', '真棒', '爱你', '谢谢', '贴心', '可爱', '靠谱', '牛']
+  const AFFINITY_HARSH = ['滚', '烦', '闭嘴', '讨厌', '傻逼', '傻', '废物', '垃圾', '别烦', '蠢']
+
+  function affinityFile() {
+    return memoryFile('affinity.json')
+  }
+
+  function affinityLoad() {
+    try {
+      const file = affinityFile()
+      if (!existsSync(file)) return {}
+      const raw = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
+      return raw && typeof raw === 'object' ? raw : {}
+    } catch {
+      return {}
+    }
+  }
+
+  function affinitySave(data) {
+    try {
+      const file = affinityFile()
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    } catch (error) {
+      logger.warn(`qq-bridge: affinity save failed: ${errorText(error)}`)
+    }
+  }
+
+  function todayKey() {
+    return new Date().toISOString().slice(0, 10)
+  }
+
+  /** 读一个人的好感度，顺手结算"好久没聊"的衰减。 */
+  function affinityFor(userId) {
+    const key = String(userId ?? '').trim()
+    if (!key) return null
+    const all = affinityLoad()
+    const now = Date.now()
+    const entry = all[key] ?? { score: 50, seen: now, day: todayKey(), gained: 0 }
+    // 超过 7 天没说话：每多一天 -1，最多 -5（自然生疏，不声张）
+    const idleDays = Math.floor((now - Number(entry.seen || now)) / 86400000)
+    if (idleDays >= 7) {
+      const decay = Math.min(5, idleDays - 6)
+      if (decay > 0 && !entry.decayedOn) {
+        entry.score = Math.max(0, Number(entry.score ?? 50) - decay)
+        entry.decayedOn = todayKey()
+      }
+    }
+    return { key, entry, all }
+  }
+
+  function affinityBump(userId, delta, reason) {
+    if (!config.affinityEnabled) return null
+    const found = affinityFor(userId)
+    if (!found) return null
+    const { key, entry, all } = found
+    const day = todayKey()
+    if (entry.day !== day) {
+      entry.day = day
+      entry.gained = 0
+    }
+    // 日常聊天每天最多涨 5 分，避免刷屏涨分
+    let applied = delta
+    if (delta > 0 && reason === 'chat') {
+      const room = Math.max(0, 5 - Number(entry.gained ?? 0))
+      applied = Math.min(delta, room)
+      entry.gained = Number(entry.gained ?? 0) + applied
+    }
+    entry.score = Math.max(0, Math.min(100, Number(entry.score ?? 50) + applied))
+    entry.seen = Date.now()
+    delete entry.decayedOn
+    all[key] = entry
+    affinitySave(all)
+    return { score: entry.score, delta: applied }
+  }
+
+  function affinityLabel(score) {
+    const value = Number(score ?? 50)
+    if (value <= 20) return '不太待见'
+    if (value <= 40) return '有点距离'
+    if (value <= 60) return '还行'
+    if (value <= 80) return '挺熟的'
+    return '关系很好'
+  }
+
+  /** 注入用的一句话；不暴露数字，只给感觉。 */
+  function affinityHint(userId) {
+    if (!config.affinityEnabled) return ''
+    const found = affinityFor(String(userId ?? ''))
+    if (!found) return ''
+    const score = Number(found.entry.score ?? 50)
+    return `你觉得这个人：${affinityLabel(score)}（好感 ${Math.round(score)}/100）`
+  }
+
+  /** 消息里的情绪信号 → 好感变化。 */
+  function affinityFromText(userId, text) {
+    if (!config.affinityEnabled) return
+    const body = String(text ?? '')
+    let delta = 1
+    let reason = 'chat'
+    if (AFFINITY_PRAISE.some((word) => body.includes(word))) {
+      delta = 2
+      reason = 'praise'
+    }
+    if (AFFINITY_HARSH.some((word) => body.includes(word))) {
+      delta = -3
+      reason = 'harsh'
+    }
+    affinityBump(userId, delta, reason)
+  }
+
+  // ---- 表情包（本地图库）-------------------------------------------------
+  // 目录结构：<stickerDir>/<标签>/xxx.gif。标签就是子目录名，用户自己往里丢图。
+
+  const STICKER_EXT = new Set(['.gif', '.png', '.jpg', '.jpeg', '.webp'])
+  const stickerLastUsed = new Map()
+
+  function stickerRoot() {
+    return config.stickerDir || join(PLUGIN_DIR, 'stickers')
+  }
+
+  /** 扫图库：返回 { tag: [绝对路径...] }。 */
+  function stickerLibrary() {
+    const root = stickerRoot()
+    const out = {}
+    try {
+      if (!existsSync(root)) return out
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const tag = entry.name
+        const dir = join(root, tag)
+        const files = readdirSync(dir)
+          .filter((name) => STICKER_EXT.has(name.toLowerCase().slice(name.lastIndexOf('.'))))
+          .map((name) => join(dir, name))
+        if (files.length) out[tag] = files
+      }
+    } catch (error) {
+      logger.warn(`qq-bridge: sticker library read failed: ${errorText(error)}`)
+    }
+    return out
+  }
+
+  /** 挑一张：指定标签时严格匹配；fallbackToRandom 才允许退化成随机。 */
+  function pickSticker(tag, fallbackToRandom = true) {
+    const lib = stickerLibrary()
+    const tags = Object.keys(lib)
+    if (!tags.length) return null
+    const wanted = String(tag ?? '').trim()
+    let chosenTag
+    if (wanted && lib[wanted]) chosenTag = wanted
+    else if (wanted && !fallbackToRandom) return null
+    else chosenTag = tags[Math.floor(Math.random() * tags.length)]
+    const files = lib[chosenTag]
+    // 同一个标签里尽量别连着发同一张
+    const last = stickerLastUsed.get(chosenTag)
+    const pool = files.length > 1 ? files.filter((file) => file !== last) : files
+    const file = pool[Math.floor(Math.random() * pool.length)]
+    stickerLastUsed.set(chosenTag, file)
+    return { tag: chosenTag, file }
+  }
+
+  async function sendSticker(target, tag, fallbackToRandom = true) {
+    const wanted = String(tag ?? '').trim()
+    const picked = pickSticker(wanted, fallbackToRandom)
+    if (!picked) {
+      const lib = stickerLibrary()
+      return { sent: false, reason: wanted && Object.keys(lib).length ? 'no-tag' : 'no-sticker' }
+    }
+    try {
+      const buffer = readFileSync(picked.file)
+      if (buffer.length > 8 * 1024 * 1024) return { sent: false, reason: 'too-large' }
+      await sendSegments(target, [{
+        type: 'image',
+        data: { file: `base64://${buffer.toString('base64')}` },
+      }])
+      logger.info(`qq-bridge: sticker "${picked.tag}" → ${target.id}`)
+      return { sent: true, tag: picked.tag }
+    } catch (error) {
+      logger.warn(`qq-bridge: sticker send failed: ${errorText(error)}`)
+      return { sent: false, reason: errorText(error) }
+    }
+  }
+
+  /** 回复后小概率补一张表情，让节奏更像真人（默认关闭）。 */
+  async function maybeAutoSticker(target) {
+    if (!config.stickerAutoChance || Math.random() >= config.stickerAutoChance) return
+    await sendSticker(target).catch(() => {})
+  }
+
+  /** 注入到每轮提示里的记忆块；没有记忆时返回空串。 */
+  function memoryContextBlock(conversationKey) {
+    if (!config.memoryEnabled || !config.memoryInject) return ''
+    const facts = memoryFacts(conversationKey)
+    const recent = config.memoryContextMessages > 0 ? memoryRecent(conversationKey, config.memoryContextMessages) : []
+    if (!facts.length && !recent.length) return ''
+    const lines = []
+    if (facts.length) {
+      lines.push('【你记下过的事】')
+      for (const fact of facts) lines.push(`- ${fact.text}`)
+    }
+    if (recent.length) {
+      lines.push('【这个对话的最近记录】')
+      for (const entry of recent) lines.push(memoryLine(entry))
+    }
+    let block = lines.join('\n')
+    if (block.length > config.memoryMaxChars) block = block.slice(-config.memoryMaxChars)
+    return `\n\n（以下是你们之前聊过的内容，供你参考，别当成新消息复述：\n${block}\n）`
+  }
+
+  /** Append one archive line in the format dsh-qq-extras' collector parses. */
+  function appendActivity(conversationKey, speaker, text) {
+    if (!config.activityLog) return
+    const body = String(text ?? '').replace(/[\r\n]+/g, ' ').trim()
+    if (!body) return
+    try {
+      const file = config.activityLogFile || join(PLUGIN_DIR, 'state', 'qq-activity.log')
+      mkdirSync(dirname(file), { recursive: true })
+      const stamp = new Date().toTimeString().slice(0, 8)
+      appendFileSync(file, `[${stamp}] ${conversationKey} ${speaker}：${body.slice(0, 2000)}\n`, 'utf8')
+    } catch (error) {
+      logger.warn(`qq-bridge: activity log failed: ${errorText(error)}`)
     }
   }
 
@@ -739,6 +1125,9 @@ export function apply(ctx, rawConfig) {
       if (delay > 0) await sleep(delay)
       await sendText(target, bubbles[index])
     }
+    appendActivity(`${target.type}:${target.id}`, 'agent 回复', bubbles.join(' '))
+    memoryRemember(`${target.type}:${target.id}`, 'agent', '', bubbles.join(' '))
+    await maybeAutoSticker(target)
   }
 
   const agentRegistrations = new Map()
@@ -884,6 +1273,107 @@ export function apply(ctx, rawConfig) {
         async execute() {
           const poked = await pokeUser(target, target.userId || selfId)
           return { poked }
+        },
+      },
+      {
+        name: 'qq_sticker',
+        description: '发一张表情包。图库按标签分类（开心、无语、困、摸摸……），标签可以省略，省略就随机挑一张。适合在文字后面补个表情，别每句都发。',
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { tag: { type: 'string', description: '标签名，比如「开心」「无语」；不确定就省略。' } },
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { sent: { type: 'boolean' }, tag: { type: 'string' }, reason: { type: 'string' } },
+            required: ['sent'],
+          },
+          render: (_args, value) => [{
+            type: 'text',
+            text: value?.sent ? `发了「${value?.tag ?? ''}」的表情。` : `没发成：${value?.reason === 'no-sticker' ? '图库是空的' : value?.reason ?? '未知原因'}`,
+          }],
+        },
+        async execute(args) {
+          const result = await sendSticker(target, String(args?.tag ?? '').trim())
+          return result
+        },
+      },
+      {
+        name: 'qq_memory_search',
+        description: '在你们过去的聊天记录里搜关键词（只搜这个对话）。想确认以前说过的事、对方提过的名字或细节时用。',
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            query: { type: 'string', description: '关键词，中文英文都行。' },
+            limit: { type: 'integer', description: '最多返回几条，默认 20，上限 50。' },
+          },
+          required: ['query'],
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { found: { type: 'integer' }, text: { type: 'string' } },
+            required: ['found'],
+          },
+          render: (args, value) => [{ type: 'text', text: value?.text ?? (value?.found ? '找到了。' : `没搜到「${args?.query ?? ''}」。`) }],
+        },
+        async execute(args) {
+          const limit = Math.max(1, Math.min(50, Math.trunc(Number(args?.limit ?? 20)) || 20))
+          const hits = memorySearch(`${target.type}:${target.id}`, String(args?.query ?? ''), limit)
+          if (!hits.length) return { found: 0, text: `没搜到「${args?.query ?? ''}」。` }
+          return { found: hits.length, text: hits.map(memoryLine).join('\n') }
+        },
+      },
+      {
+        name: 'qq_memory_recent',
+        description: '看这个对话最近的聊天记录（默认 15 条）。不确定刚才聊到哪儿时用。',
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { limit: { type: 'integer', description: '条数，默认 15，上限 50。' } },
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { count: { type: 'integer' }, text: { type: 'string' } },
+            required: ['count'],
+          },
+          render: (_args, value) => [{ type: 'text', text: value?.text ?? '这个对话还没有记录。' }],
+        },
+        async execute(args) {
+          const limit = Math.max(1, Math.min(50, Math.trunc(Number(args?.limit ?? 15)) || 15))
+          const recent = memoryRecent(`${target.type}:${target.id}`, limit)
+          if (!recent.length) return { count: 0, text: '这个对话还没有记录。' }
+          return { count: recent.length, text: recent.map(memoryLine).join('\n') }
+        },
+      },
+      {
+        name: 'qq_memory_remember',
+        description: '把一件值得长期记住的事记下来（对方的喜好、重要日期、约定、雷区）。以后每轮都会看到这条笔记。',
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { text: { type: 'string', description: '一句话，具体、可核对，别写空泛的评价。' } },
+          required: ['text'],
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { saved: { type: 'boolean' } },
+            required: ['saved'],
+          },
+          render: (_args, value) => [{ type: 'text', text: value?.saved ? '记下了。' : '没记成（内容为空？）。' }],
+        },
+        async execute(args) {
+          const saved = memoryRememberFact(`${target.type}:${target.id}`, String(args?.text ?? ''))
+          if (saved) affinityBump(target.userId || target.id, 1, 'remember')
+          return { saved }
         },
       },
     ]
@@ -1185,11 +1675,16 @@ export function apply(ctx, rawConfig) {
       const agentCtx = agent.ctx
       const systemPrompt = agentCtx?.systemPrompt
       if (systemPrompt) {
+        // 联网工具在手上时，提示模型"先查再答"，别凭印象编事实。
+        const hasWeb = config.chatTools.includes('web_search') || config.chatTools.includes('web_fetch')
+        const webHint = hasWeb
+          ? '\n\n【查资料】遇到需要实时信息的问题（新闻、价格、版本号、天气、比赛、人物近况、某个东西能不能用），先用 web_search 查一下再回答，别凭印象编。查完用自己的话说，别整段贴链接。'
+          : ''
         // The persona is the whole prompt for every QQ session, admin included —
         // otherwise the person you actually chat with gets a coding-assistant
         // voice instead of the character you configured. Admins just get a short
         // capability footer so they can still ask for real work.
-        const promptText = adminSurface ? `${personaText}\n\n${ADMIN_FOOTER}` : personaText
+        const promptText = adminSurface ? `${personaText}\n\n${ADMIN_FOOTER}${webHint}` : `${personaText}${webHint}`
         disposers.push(systemPrompt.section({
           name: 'qq:chat-persona',
           order: -900,
@@ -1374,7 +1869,7 @@ export function apply(ctx, rawConfig) {
   async function handleCommand(target, text, event) {
     const trimmed = String(text ?? '').trim()
     if (!/^[/／]/.test(trimmed)) return false
-    const match = /^[/／]([a-zA-Z]+)\s*([\s\S]*)$/.exec(trimmed)
+    const match = /^[/／]([a-zA-Z\u4e00-\u9fa5]+)\s*([\s\S]*)$/.exec(trimmed)
     if (!match) return false
     const name = match[1].toLowerCase()
     const rest = match[2].trim()
@@ -1384,20 +1879,129 @@ export function apply(ctx, rawConfig) {
     const privateChat = event.message_type === 'private'
     const say = (body) => sendText(target, body).catch(() => {})
 
+    // ---- 好感度 ----------------------------------------------------------
+    if (name === 'affinity') {
+      if (!admin || !privateChat) return true
+      const all = affinityLoad()
+      const rows = Object.entries(all)
+        .sort((a, b) => Number(b[1]?.score ?? 0) - Number(a[1]?.score ?? 0))
+        .slice(0, 10)
+      const mine = affinityFor(fromUserId)?.entry?.score ?? 50
+      if (!rows.length) {
+        await say(`你：${Math.round(mine)}/100（${affinityLabel(mine)}）\n还没有别人的记录。`)
+        return true
+      }
+      const lines = [`你：${Math.round(mine)}/100（${affinityLabel(mine)}）`, '', '排前面的：']
+      for (const [id, entry] of rows) {
+        lines.push(`${id}  ${Math.round(Number(entry?.score ?? 0))}/100  ${affinityLabel(entry?.score)}`)
+      }
+      await say(lines.join('\n'))
+      return true
+    }
+
+    // ---- 表情包 ----------------------------------------------------------
+    if (name === 'sticker' || name === '表情') {
+      const lib = stickerLibrary()
+      const tags = Object.keys(lib)
+      if (!tags.length) {
+        await say(`图库是空的。把图片按标签放进目录即可：\n${join(stickerRoot(), '<标签>', 'xxx.gif')}`)
+        return true
+      }
+      if (!rest) {
+        const lines = ['可用标签：']
+        for (const tag of tags) lines.push(`${tag}（${lib[tag].length} 张）`)
+        lines.push('', `发一张：/sticker 标签名`)
+        await say(lines.join('\n'))
+        return true
+      }
+      const result = await sendSticker(target, rest, false)
+      if (!result.sent) await say(result.reason === 'no-tag' ? `没有「${rest}」这个标签，发 /sticker 看看有哪些。` : '图库是空的。')
+      return true
+    }
+
+    // ---- 点歌 ------------------------------------------------------------
+    if (name === '点歌' || name === 'music') {
+      if (!rest) {
+        await say('用法：/点歌 歌名（可以带上歌手）')
+        return true
+      }
+      try {
+        const songs = await searchQQMusic(rest, 3)
+        if (!songs.length) {
+          await say(`没搜到「${rest}」，换个关键词试试？`)
+          return true
+        }
+        const song = songs[0]
+        await sendSegments(target, [{ type: 'music', data: { type: 'qq', id: song.mid } }])
+        logger.info(`qq-bridge: music "${song.name}" (${song.singer}) → ${target.id}`)
+      } catch (error) {
+        await say(`点歌失败了：${errorText(error)}`)
+      }
+      return true
+    }
+
+    // ---- 群管理（只在群里、只给管理员）-----------------------------------
+    if (name === 'ban' || name === 'unban' || name === 'kick' || name === 'card' || name === 'recall') {
+      // 群里没有管理员权限，私聊里也做不了这些事——静默返回，不提示。
+      if (privateChat || target.type !== 'group' || !admin) return true
+      const groupId = Number(target.id)
+      const targets = atTargets(event)
+      try {
+        if (name === 'recall') {
+          const messageId = repliedId(event)
+          if (!messageId) {
+            await say('用法：回复要撤回的那条消息，再发 /recall')
+            return true
+          }
+          await client.call('delete_msg', { message_id: Number(messageId) }, 10000)
+          return true
+        }
+        if (!targets.length) {
+          const usage = name === 'ban' ? '/ban @某人 [分钟]' : name === 'card' ? '/card @某人 新昵称' : `/${name} @某人`
+          await say(`用法：${usage}`)
+          return true
+        }
+        const userId = Number(targets[0])
+        if (name === 'ban') {
+          const minutes = Math.max(1, Math.min(43200, Math.trunc(Number(args.at(-1) ?? 10)) || 10))
+          await client.call('set_group_ban', { group_id: groupId, user_id: userId, duration: minutes * 60 }, 10000)
+          await say(`已禁言 ${minutes} 分钟。`)
+        } else if (name === 'unban') {
+          await client.call('set_group_ban', { group_id: groupId, user_id: userId, duration: 0 }, 10000)
+          await say('已解除禁言。')
+        } else if (name === 'kick') {
+          await client.call('set_group_kick', { group_id: groupId, user_id: userId, reject_add_request: false }, 10000)
+          await say('已移出群聊。')
+        } else if (name === 'card') {
+          const card = rest.replace(/@\S+/g, '').trim()
+          if (!card) {
+            await say('用法：/card @某人 新昵称')
+            return true
+          }
+          await client.call('set_group_card', { group_id: groupId, user_id: userId, card }, 10000)
+          await say('群名片改好了。')
+        }
+      } catch (error) {
+        await say(`操作失败：${errorText(error)}`)
+      }
+      return true
+    }
+
     if (name === 'whoami') {
       await say(`你是${admin ? '管理员' : '普通用户'}。\n会话 id：${conversationFor(target).sessionId}${config.mutedChats.includes(chatKeyOf(target)) ? '\n（这个会话当前被静音）' : ''}`)
       return true
     }
 
     if (name === 'help') {
-      const common = '/whoami 看自己的身份\n/stop 打断当前回复'
+      const common = '/whoami 看自己的身份\n/stop 打断当前回复\n/点歌 歌名（也能用 /music）\n/sticker 看表情包标签，/sticker 标签 发一张\n/help 看这份说明'
       const adminLines = admin && privateChat
         ? '\n\n管人管群：\n/allow 123 · /deny 123\n/allowgroup 123 · /denygroup 123\n/admin 123 · /unadmin 123'
           + '\n有人加好友会推给你：/pending 看队列 · /yes 编号 通过（自动加白名单）· /no 编号 拒绝'
+          + '\n\n管群（在群里发，仅管理员）：\n/ban @某人 [分钟] · /unban @某人 · /kick @某人\n/card @某人 新昵称 · 回复那条消息再发 /recall 撤回'
           + '\n\n指挥它行动：\n/say 你要它说的话（可 /say group 群号 内容）\n/poke QQ号\n/mute · /unmute（可带 group 群号 / user QQ号）'
           + '\n/quiet on|off 停/开主动说话\n/persona 人设文本 或 /persona reset\n/reset 重开当前对话'
           + '\n/cwd D:/目录 切当前对话的工作区（/cwd 看当前，/cwd reset 回默认）'
-          + '\n/route 看模型通道'
+          + '\n/route 看模型通道\n/affinity 看好感度排行'
         : ''
       await say(`${common}${adminLines}`)
       return true
@@ -1854,6 +2458,10 @@ export function apply(ctx, rawConfig) {
     }
 
     conversation.queue.push({ text: promptText, target })
+    const speaker = asString(event.sender?.card, '') || asString(event.sender?.nickname, '') || target.userId
+    appendActivity(`${target.type}:${target.id}`, isAdmin(target.userId) ? `管理员 ${speaker}` : speaker, cleaned)
+    memoryRemember(`${target.type}:${target.id}`, 'user', speaker, cleaned)
+    affinityFromText(target.userId || target.id, cleaned)
     void pump(conversation)
   }
 
@@ -1958,7 +2566,10 @@ export function apply(ctx, rawConfig) {
     if (live) installChatSurface(live)
     const { controller, request } = await ensureSession(conversation)
     const signal = new AbortController().signal
-    const payload = { ...request, content: [{ type: 'text', text }] }
+    const personId = conversation.target.userId || conversation.target.id
+    const affinity = affinityHint(personId)
+    const memoryBlock = `${affinity ? `\n\n（${affinity}）` : ''}${memoryContextBlock(conversation.key)}`
+    const payload = { ...request, content: [{ type: 'text', text: `${text}${memoryBlock}` }] }
     try {
       return await controller.prompt(payload, signal)
     } catch (error) {

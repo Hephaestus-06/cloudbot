@@ -12,7 +12,7 @@
         # Who may talk to the bot. Empty lists mean "nobody yet": an unauthorized
         # chat receives a hint containing its QQ/group id, which you add below.
         allowAll: false
-        allowedUsers: ['100000001']
+        allowedUsers: ['100000001', '100000002', '100000003']
         allowedGroups: ['200000001']
         # 管理员：永远被授权，且“私聊”时拥有完整能力（工具 + 管理指令）。
         # 群聊里不携带管理员身份，避免公开发言的人指挥它动这台机器。

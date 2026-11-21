@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-qq-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Bridge QQ chats (OneBot 11 / NapCat) to DeepSeek Harness agent sessions",
@@ -12,8 +12,10 @@
   "files": [
     "index.js",
     "cordis.patch.yml",
-    "locale/*.json",
-    "icon.svg"
+    "persona.example.md",
+    "PERSONA-README.md",
+    "icon.svg",
+    "stickers"
   ],
   "dsh": {
     "bundle": {
@@ -34,6 +36,8 @@
     "qq",
     "onebot",
     "napcat",
-    "bridge"
+    "bridge",
+    "memory",
+    "sticker"
   ]
 }

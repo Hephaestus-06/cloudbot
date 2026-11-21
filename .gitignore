@@ -18,6 +18,9 @@ pnpm-lock.yaml
 .DS_Store
 Thumbs.db
 
-# 内部资料/客户文档，不入公开仓库
+# 内部资料 / 客户文档，不进公开仓库
 .private/
 导入文档/
+
+# 构建产物
+dist/

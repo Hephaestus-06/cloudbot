@@ -22,6 +22,27 @@ docs/          配置台说明、服务器迁移方案
 
 配置台和桥接是两件独立的东西：前者是「改配置的界面」，后者是「真正在跑消息的东西」。
 
+## 打包与安装
+
+**打包**（开发机上）：
+
+```bash
+node scripts/package.mjs
+```
+
+产出 `dist/cloudbot-<version>/` 和同名 zip（含 `manifest.json`，记录每个文件的 sha256）。
+
+**安装**（目标机器上）：
+
+```bash
+unzip cloudbot-0.2.0.zip -d cloudbot && cd cloudbot
+node install.mjs --profile cloudbot     # 加 --dry-run 只看计划
+dsh cloudbot                            # 启动
+```
+
+安装器会：检查 Node ≥ 20 → 建 profile 骨架 → 写入 bundles → `dsh plugin add link:bridge` → 从示例生成 `persona.md`。
+重复执行是幂等的，不会覆盖已有配置和人设。
+
 ## 怎么启动
 
 三种方式，按场景选。

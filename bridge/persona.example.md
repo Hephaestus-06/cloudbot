@@ -1,7 +1,7 @@
 # 人设说明（示例模板）
 
 > 用法：把本文件复制成 `persona.md`，随便改；然后在 qq-bridge 配置里写
-> `personaFile: 'D:/deepseek harness desktop/qq-bridge/persona.md'`，
+> `personaFile: ''`，
 > 或者在 QQ 里对机器人发 `/persona file D:/.../persona.md`。
 >
 > 注意：这段文字会**整段替换** QQ 会话的系统提示词，所以除了「性格」，
