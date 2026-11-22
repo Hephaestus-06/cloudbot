@@ -78,6 +78,10 @@ cp backup/cordis.patch.yml  ~/.dsh/profiles/desktop/cordis.patch.yml
 ```
 旧插件代码和数据（`state/memory`、`stickers`）都保留，不需要迁移数据。
 
+**回滚演练（2026-11-22 已验证）**：线上把 `dsh-onebot-qq` 停用、重新启用 `@local/dsh-qq-bridge`，
+3001 端口连接随即由旧插件接管（连接数 1）；再反向切回，`dsh-onebot-qq` 重新连上，`get_status` 仍为 online。
+两个方向都不需要改配置、不需要重启应用，只需切换 bundle 的启用状态。
+
 ## 协议端（NapCat → Lagrange）
 
 **已准备好，等待一次扫码切换**（2026-11-22）。
