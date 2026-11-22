@@ -285,6 +285,11 @@ export function apply(ctx, rawConfig) {
       const text = textOf(event.data?.message ?? event.data)
       if (!text) return
       remember(chatKey, 'agent', '', text)
+      return
+    }
+    // 回合结束后，按概率补一张表情，让节奏更像真人（默认关闭）
+    if (event?.type === 'turn/end' && config.stickerAutoChance > 0 && Math.random() < config.stickerAutoChance) {
+      void sendSticker(chatKey, '', true).catch(() => {})
     }
   })
 
@@ -429,6 +434,12 @@ export function apply(ctx, rawConfig) {
         name: 'cloudbot:memory',
         order: 900,
         text: () => memoryBlock(chatKey),
+      }))
+      // 分段提示：宿主插件默认把整段回复合成一条消息，想"连发几条"要用它的分段工具。
+      disposers.push(systemPrompt.context({
+        name: 'cloudbot:segments-hint',
+        order: 901,
+        text: () => `（想连发几条短消息营造聊天感时，用 qq_send_segments 工具；普通回复保持一两句，别写长段落。）`,
       }))
     }
 
