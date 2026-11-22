@@ -9,18 +9,27 @@
 | 模块 | 状态 | 位置 |
 |---|---|---|
 | 远程配置台（改人设 / 白名单 / 功能开关 / 看状态） | ✅ v0.1 可用 | [`src/`](src/server.mjs) · [说明](docs/CONSOLE.md) |
-| QQ 桥接插件（OneBot ↔ DSH 会话） | ✅ v0.1.0 可审阅 | [`bridge/`](bridge/README.md) |
+| QQ 桥接插件（OneBot ↔ DSH 会话，旧方案） | ✅ v0.2.0，保留作回滚 | [`bridge/`](bridge/README.md) |
+| **混合方案：`dsh-onebot-qq` 通道 + 皮肤层** | ✅ 隔离 profile 验证通过 | [`packages/cloudbot-skin/`](packages/cloudbot-skin/index.js) · [迁移说明](docs/MIGRATION-ONEBOT.md) |
 | 服务器部署 | ⏳ 等机器 | [方案草稿](docs/SERVER-DEPLOY.md) |
 
 ## 组成
 
 ```
-bridge/        QQ 桥接插件（DSH Host 插件，零依赖，MIT）
-src/ + web/    远程配置台（改人设、白名单、开关）
-docs/          配置台说明、服务器迁移方案
+bridge/              自研桥接插件（旧方案：通道 + 人设 + 记忆 + 表情，一体）
+packages/cloudbot-skin/  皮肤层插件（新方案：只补人设/记忆/好感度/表情包）
+src/ + web/          远程配置台（改人设、白名单、开关）
+docs/                配置台说明、迁移方案、服务器部署草稿
 ```
 
-配置台和桥接是两件独立的东西：前者是「改配置的界面」，后者是「真正在跑消息的东西」。
+**两代架构**：
+
+- **旧**：`bridge/` 一个插件包办通道与"活人感"，能力有限（无语音/卡片/媒体工具）。
+- **新（推荐）**：通道交给 `dsh-onebot-qq`（语音转写、t2i 卡片、媒体工具、完整命令集），
+  `cloudbot-skin` 只负责把它变"像人"——人设注入、长期记忆、好感度、表情包。
+  详见 [docs/MIGRATION-ONEBOT.md](docs/MIGRATION-ONEBOT.md)。
+
+配置台和这两个插件是独立的东西：前者是「改配置的界面」，后两者是「真正在跑消息的东西」。
 
 ## 打包与安装
 

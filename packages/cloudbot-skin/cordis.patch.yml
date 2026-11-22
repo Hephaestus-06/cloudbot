@@ -1,0 +1,11 @@
+# 皮肤层：给 dsh-onebot-qq 的 QQ 会话补上人设、记忆和好感度。
+- insert:
+    - id: cloudbot-skin
+      name: '@local/dsh-cloudbot-skin'
+      config:
+        personaFile: ''
+        memoryDir: ''
+        affinityEnabled: true
+        memoryContextMessages: 10
+        memoryInject: true
+        memoryMaxChars: 1200

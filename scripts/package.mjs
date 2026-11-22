@@ -41,8 +41,13 @@ function copyTree(from, to, filter = () => true) {
 
 const skip = (p) => !/node_modules|[\\/]dist([\\/]|$)|\.git([\\/]|$)/.test(p)
 
-// 1) 插件（含图库，但去掉开发用的 persona.md）
+// 1) 旧方案插件（含图库，保留作回滚；不含开发用 persona.md）
 copyTree(join(ROOT, 'bridge'), join(outDir, 'bridge'), (src) => skip(src) && !src.endsWith('persona.md'))
+
+// 1b) 新方案皮肤层（人设/记忆/好感度/表情包）
+if (existsSync(join(ROOT, 'packages', 'cloudbot-skin'))) {
+  copyTree(join(ROOT, 'packages', 'cloudbot-skin'), join(outDir, 'skin'))
+}
 
 // 2) 配置台
 mkdirSync(join(outDir, 'console', 'src'), { recursive: true })
@@ -64,6 +69,10 @@ if (existsSync(consoleCfg)) {
 copyFileSync(join(ROOT, 'packaging', 'install.mjs'), join(outDir, 'install.mjs'))
 for (const file of ['README.md', 'LICENSE']) {
   if (existsSync(join(ROOT, file))) copyFileSync(join(ROOT, file), join(outDir, file))
+}
+if (existsSync(join(ROOT, 'docs', 'MIGRATION-ONEBOT.md'))) {
+  mkdirSync(join(outDir, 'docs'), { recursive: true })
+  copyFileSync(join(ROOT, 'docs', 'MIGRATION-ONEBOT.md'), join(outDir, 'docs', 'MIGRATION-ONEBOT.md'))
 }
 
 // 4) manifest
