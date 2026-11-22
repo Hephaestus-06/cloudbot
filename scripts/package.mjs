@@ -78,9 +78,9 @@ copyFileSync(join(ROOT, 'packaging', 'install.mjs'), join(outDir, 'install.mjs')
 for (const file of ['README.md', 'LICENSE']) {
   if (existsSync(join(ROOT, file))) copyFileSync(join(ROOT, file), join(outDir, file))
 }
-if (existsSync(join(ROOT, 'docs', 'MIGRATION-ONEBOT.md'))) {
+if (existsSync(join(ROOT, 'docs'))) {
   mkdirSync(join(outDir, 'docs'), { recursive: true })
-  copyFileSync(join(ROOT, 'docs', 'MIGRATION-ONEBOT.md'), join(outDir, 'docs', 'MIGRATION-ONEBOT.md'))
+  copyTree(join(ROOT, 'docs'), join(outDir, 'docs'))
 }
 
 // 4) manifest
