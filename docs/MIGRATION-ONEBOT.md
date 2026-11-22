@@ -76,12 +76,34 @@ cp backup/cordis.patch.yml  ~/.dsh/profiles/desktop/cordis.patch.yml
 
 ## 协议端（NapCat → Lagrange）
 
-**尚未完成**。Lagrange.OneBot 提供自包含 Windows 二进制（33 MB），但本机网络下载反复中断（23.7/33.4 MB 被重置，续传不支持）。
+**已准备好，等待一次扫码切换**（2026-11-22）。
 
-如果后续要换：
-1. 下载 `Lagrange.OneBot_win-x64_net9.0_SelfContained.zip`
-2. 解压后改 `appsettings.json`：`Implementations[0].ForwardWebSocket` 指向 3001
-3. 停 NapCat → 启动 Lagrange → 扫码登录
-4. `dsh-onebot` 的 `url` 不变（都是 3001），无需改配置
+Lagrange.OneBot 的自包含 Windows 二进制已经下载并配置好：
 
-**注意**：Lagrange 也是第三方 NTQQ 协议实现，换客户端会重新走一次登录风控；当前账号已多次被风控，建议先用小号验证。
+| 项 | 值 |
+|---|---|
+| 版本 | nightly（自包含 .NET 9，单文件 79 MB） |
+| 位置 | `.private/lagrange/run/`（zip 与解压产物都在 `.private`，不进仓库） |
+| 账号 | `appsettings.json` 里 `Account.Uin` 已填 |
+| OneBot | `ForwardWebSocket` 监听 `127.0.0.1:3001`（与 NapCat 相同，DSH 侧无需改配置） |
+
+切换脚本（在 `.private/lagrange/`，**管理员运行**）：
+
+```bat
+switch-to-lagrange.bat     :: 停 NapCat → 启动 Lagrange（控制台会打印二维码）
+switch-back-to-napcat.bat  :: 停 Lagrange → 重新拉起 NapCat 计划任务
+```
+
+切换后要做的事：
+
+1. 在 Lagrange 的窗口里用手机扫码登录；
+2. 看到登录成功后，DSH 的 `dsh-onebot` 会自动重连 3001（无需改配置）；
+3. 发一条消息验证；有问题就跑 `switch-back-to-napcat.bat` 回滚。
+
+**为什么要谨慎**：Lagrange 同样是第三方 NTQQ 协议实现，换客户端会重新走一次登录风控。当前账号今天已经被风控过（先禁登录、后禁发送），建议：
+
+- 先用**小号**验证 Lagrange 能否登录、能否收发；
+- 主号留在 NapCat 上，直到小号验证通过。
+
+**已知限制**：Lagrange.OneBot 需要真实控制台（无控制台会因 `Console.get_BufferWidth` 抛异常崩溃），所以不能以后台服务方式静默运行，必须以窗口形式启动（或用 ConPTY 包装）。
+

@@ -48,6 +48,14 @@ copyTree(join(ROOT, 'bridge'), join(outDir, 'bridge'), (src) => skip(src) && !sr
 if (existsSync(join(ROOT, 'packages', 'cloudbot-skin'))) {
   copyTree(join(ROOT, 'packages', 'cloudbot-skin'), join(outDir, 'skin'))
 }
+// 1c) 顶层表情图库（安装器默认指向 <安装目录>/stickers）
+if (existsSync(join(ROOT, 'bridge', 'stickers'))) {
+  copyTree(join(ROOT, 'bridge', 'stickers'), join(outDir, 'stickers'))
+}
+// 1d) 人设模板
+if (existsSync(join(ROOT, 'bridge', 'persona.example.md'))) {
+  copyFileSync(join(ROOT, 'bridge', 'persona.example.md'), join(outDir, 'persona.example.md'))
+}
 
 // 2) 配置台
 mkdirSync(join(outDir, 'console', 'src'), { recursive: true })
