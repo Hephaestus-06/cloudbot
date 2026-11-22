@@ -31,6 +31,8 @@ QQ ←→ NapCat(OneBot WS 3001) ←→ dsh-onebot-qq（通道：命令/媒体/�
 ### 皮肤层做了三件事
 
 1. **人设**：`personaFile` 指向 Markdown，注册为动态 `systemPrompt.section`（每次组装提示词时读文件，改完即生效）。
+   ⚠️ **必须用 `agent.ctx`（会话自己的作用域）注册**：用插件的全局 `ctx` 会把人设和工具泄漏到所有会话
+   （包括 GUI 里的普通代码对话），这是一个已修复的真实 bug。
 2. **记忆**：监听 `session/event`
    - 只解析 `<user_message qq=... nickname=...>` 包装内的文本（避免把 DSH 注入的运行时上下文记成聊天）
    - 写入 `messages.jsonl` / `facts.jsonl`

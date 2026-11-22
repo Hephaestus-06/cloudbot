@@ -414,8 +414,10 @@ export function apply(ctx, rawConfig) {
   ctx.on('agent/created', ({ agent }) => {
     const chatKey = chatKeyOfSession(agent?.session?.id)
     if (!chatKey) return
-    const systemPrompt = ctx.get('systemPrompt')
-    const tools = ctx.get('tools')
+    // 必须用 agent 自己的作用域：全局注册会污染所有会话（包括 GUI 里的普通对话）。
+    const agentCtx = agent?.ctx
+    const systemPrompt = agentCtx?.systemPrompt
+    const tools = agentCtx?.tools
     const disposers = []
 
     if (systemPrompt) {
