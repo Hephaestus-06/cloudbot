@@ -1,7 +1,11 @@
 {
   "port": 8787,
   "host": "127.0.0.1",
-  "profileDir": "C:/Users/RUAN/.dsh/profiles/desktop",
-  "pluginDir": "D:/deepseek harness desktop/qq-bridge",
-  "oneBotWs": "ws://127.0.0.1:3001"
+  "profileDir": "~/.dsh/profiles/desktop",
+  "pluginDir": "<安装目录>/qq-bridge",
+  "oneBotWs": "ws://127.0.0.1:3001",
+  "traceFile": "~/.dsh/media/onebot/qq-trace.jsonl",
+  "chatSessionsFile": "~/.dsh/media/onebot/chat-sessions.json",
+  "stickerDir": "<安装目录>/stickers",
+  "oneBotPort": 3001
 }

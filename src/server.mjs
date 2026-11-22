@@ -13,7 +13,7 @@
 import { createServer } from 'node:http'
 import { createHash, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connect } from 'node:net'
@@ -35,6 +35,11 @@ const DEFAULT_CONFIG = {
   // 配置行的 id 与包名
   rowId: 'qq-bridge',
   packageName: '@local/dsh-qq-bridge',
+  // 新架构（dsh-onebot-qq + cloudbot-skin）用到的路径
+  traceFile: 'C:/Users/RUAN/.dsh/media/onebot/qq-trace.jsonl',
+  chatSessionsFile: 'C:/Users/RUAN/.dsh/media/onebot/chat-sessions.json',
+  stickerDir: 'D:/deepseek harness desktop/qq-bridge/stickers',
+  oneBotPort: 3001,
 }
 
 function loadConfig() {
@@ -397,6 +402,80 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/state') {
       sendJson(res, 200, await collectState())
+      return
+    }
+
+    // 新架构的运行状态：协议端端口、插件连接数、会话映射、最近 trace
+    if (req.method === 'GET' && url.pathname === '/api/onebot') {
+      const port = Number(config.oneBotPort) || 3001
+      const portUp = await tcpCheck('127.0.0.1', port)
+      const chats = (() => {
+        try {
+          return JSON.parse(readFileSync(config.chatSessionsFile, 'utf8').replace(/^\uFEFF/, ''))
+        } catch {
+          return {}
+        }
+      })()
+      const trace = (() => {
+        try {
+          return readFileSync(config.traceFile, 'utf8').split(/\r?\n/).filter(Boolean).slice(-40).map((line) => {
+            try {
+              const e = JSON.parse(line)
+              return { ts: e.ts, stage: e.stage, ok: e.ok, reason: e.reason ?? '', chatId: e.chatId ?? '', text: e.data?.text ?? '' }
+            } catch {
+              return { stage: 'raw', reason: line.slice(0, 160) }
+            }
+          })
+        } catch {
+          return []
+        }
+      })()
+      sendJson(res, 200, { ok: true, port, portUp, chats, trace })
+      return
+    }
+
+    // 表情图库：列出标签与数量
+    if (req.method === 'GET' && url.pathname === '/api/stickers') {
+      const root = config.stickerDir
+      const tags = []
+      try {
+        for (const entry of readdirSync(root, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue
+          const files = readdirSync(join(root, entry.name)).filter((name) => /\.(gif|png|jpe?g|webp)$/i.test(name))
+          if (files.length) tags.push({ name: entry.name, count: files.length })
+        }
+      } catch {
+        /* 目录不存在时返回空 */
+      }
+      sendJson(res, 200, { ok: true, root, tags })
+      return
+    }
+
+    // 表情图库：上传一张（base64），落到 <stickerDir>/<tag>/
+    if (req.method === 'POST' && url.pathname === '/api/stickers/upload') {
+      const body = await readBody(req)
+      const tag = String(body.tag ?? '').trim()
+      const name = String(body.name ?? '').trim()
+      const data = String(body.data ?? '')
+      if (!tag || !/^[^\\/:*?"<>|]{1,20}$/.test(tag)) {
+        sendJson(res, 400, { ok: false, error: '标签名不合法' })
+        return
+      }
+      if (!/\.(gif|png|jpe?g|webp)$/i.test(name)) {
+        sendJson(res, 400, { ok: false, error: '只支持 gif/png/jpg/webp' })
+        return
+      }
+      const raw = data.replace(/^data:[^,]+,/, '')
+      const buffer = Buffer.from(raw, 'base64')
+      if (!buffer.length || buffer.length > 8 * 1024 * 1024) {
+        sendJson(res, 400, { ok: false, error: '文件为空或超过 8 MB' })
+        return
+      }
+      const dir = join(config.stickerDir, tag)
+      mkdirSync(dir, { recursive: true })
+      const target = join(dir, name.replace(/[\\/:*?"<>|]/g, '_'))
+      writeFileSync(target, buffer)
+      sendJson(res, 200, { ok: true, file: target, bytes: buffer.length })
       return
     }
 

@@ -74,6 +74,29 @@
   </div>
 
   <div class="panel">
+    <h2>运行状态（dsh-onebot）</h2>
+    <div class="status" id="onebotStatus"><div class="chip"><div class="k">加载中…</div><div class="v">—</div></div></div>
+    <div class="hint" style="margin-top:10px">最近事件（trace 末尾）：</div>
+    <pre id="traceTail" style="max-height:220px;overflow:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;line-height:1.6"></pre>
+    <div class="actions">
+      <button class="ghost" id="refreshOnebot">刷新</button>
+      <span class="hint" id="onebotHint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>表情包图库</h2>
+    <div class="hint" id="stickerRoot"></div>
+    <div class="status" id="stickerTags" style="margin-top:10px"></div>
+    <div class="actions" style="margin-top:12px">
+      <input type="text" id="stickerTag" placeholder="标签（如 开心）" style="max-width:160px" />
+      <input type="file" id="stickerFile" accept=".gif,.png,.jpg,.jpeg,.webp" />
+      <button id="stickerUpload">上传</button>
+      <span class="msg" id="stickerMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>服务</h2>
     <div class="hint">这个配置台是个本地网页服务，关掉浏览器不会停止它。要彻底关闭：</div>
     <div class="actions">
@@ -287,7 +310,64 @@ $('shutdown').onclick = async () => {
   }
 }
 
+async function loadOnebot() {
+  try {
+    const data = await api('/api/onebot')
+    const port = data.portUp ? '<span class="ok">在监听</span>' : '<span class="bad">没监听</span>'
+    const chats = Object.keys(data.chats ?? {})
+    $('onebotStatus').innerHTML = `
+      <div class="chip"><div class="k">协议端端口 ${data.port}</div><div class="v">${port}</div></div>
+      <div class="chip"><div class="k">会话映射</div><div class="v">${chats.length} 个</div></div>
+      <div class="chip"><div class="k">最近事件</div><div class="v">${data.trace?.length ?? 0} 条</div></div>
+    `
+    $('onebotHint').textContent = chats.length ? chats.join('，') : '还没有 QQ 会话（发一条消息试试）'
+    const tail = (data.trace ?? []).slice(-12).map((e) => {
+      const time = e.ts ? new Date(e.ts).toLocaleTimeString('zh-CN') : ''
+      const text = e.text ? ` 「${String(e.text).slice(0, 40)}」` : ''
+      return `${time} [${e.stage}] ${e.reason ?? ''}${text}`
+    }).join('\n')
+    $('traceTail').textContent = tail || '（没有事件）'
+  } catch (error) {
+    $('onebotStatus').innerHTML = `<div class="chip"><div class="k">读取失败</div><div class="v bad">${error.message}</div></div>`
+  }
+}
+
+async function loadStickers() {
+  try {
+    const data = await api('/api/stickers')
+    $('stickerRoot').textContent = `目录：${data.root}（子目录名就是标签，往里面丢图即可）`
+    $('stickerTags').innerHTML = (data.tags ?? []).length
+      ? data.tags.map((tag) => `<div class="chip"><div class="k">${tag.name}</div><div class="v">${tag.count} 张</div></div>`).join('')
+      : '<div class="chip"><div class="k">图库是空的</div><div class="v">—</div></div>'
+  } catch (error) {
+    $('stickerTags').innerHTML = `<div class="chip"><div class="k">读取失败</div><div class="v bad">${error.message}</div></div>`
+  }
+}
+
+$('refreshOnebot').onclick = () => { loadOnebot(); loadStickers() }
+
+$('stickerUpload').onclick = async () => {
+  const tag = $('stickerTag').value.trim()
+  const file = $('stickerFile').files?.[0]
+  if (!tag || !file) { msg('stickerMsg', '标签和文件都要给', false); return }
+  try {
+    const buffer = new Uint8Array(await file.arrayBuffer())
+    let binary = ''
+    for (const byte of buffer) binary += String.fromCharCode(byte)
+    await api('/api/stickers/upload', {
+      method: 'POST',
+      body: JSON.stringify({ tag, name: file.name, data: btoa(binary) }),
+    })
+    msg('stickerMsg', '上传成功', true)
+    $('stickerFile').value = ''
+    loadStickers()
+  } catch (error) {
+    msg('stickerMsg', error.message, false)
+  }
+}
+
 loadState()
-</script>
+loadOnebot()
+loadStickers()</script>
 </body>
 </html>
