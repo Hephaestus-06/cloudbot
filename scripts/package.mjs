@@ -67,21 +67,41 @@ if (existsSync(join(ROOT, 'scripts', 'selftest-onebot.mjs'))) {
   copyFileSync(join(ROOT, 'scripts', 'selftest-onebot.mjs'), join(outDir, 'scripts', 'selftest-onebot.mjs'))
 }
 
-// 1f) 协议端（可选：把本地下载好的 SnowLuma 打进包，实现"一个包完成部署"）
-function findProtocolZip() {
-  const fromEnv = process.env.CLOUDBOT_PROTOCOL_ZIP
-  if (fromEnv && existsSync(fromEnv)) return fromEnv
-  const dir = join(ROOT, '.private', 'snowluma')
-  if (!existsSync(dir)) return ''
-  const name = readdirSync(dir).find((entry) => /SnowLuma.*win-x64.*\.zip$/i.test(entry))
-  return name ? join(dir, name) : ''
-}
-const protocolZip = findProtocolZip()
-if (protocolZip) {
-  mkdirSync(join(outDir, 'protocol'), { recursive: true })
-  copyFileSync(protocolZip, join(outDir, 'protocol', basename(protocolZip)))
-  console.log(`  + protocol client: ${basename(protocolZip)}`)
-}
+// 1f) 协议端：**不打包二进制**
+// SnowLuma EULA 5.4 明确禁止「并入第三方安装包」和「通过自动化脚本部署」；
+// NapCat / Lagrange 仓库没有 LICENSE 文件（默认保留所有权利）。所以包里只放说明。
+const protocolReadme = `# 协议端（需你自行下载）
+
+本安装包**不附带** OneBot 协议端二进制——SnowLuma / NapCat / Lagrange 的许可都不允许
+被并进第三方安装包（SnowLuma EULA 第 5.4 条还明确禁止"通过自动化脚本部署"）。
+
+## 推荐：SnowLuma
+
+1. 打开 https://github.com/TomyJan/SnowLuma/releases
+2. 下载 \`SnowLuma-v*-win-x64.zip\`（约 41 MB）
+3. 解压到本目录，使路径变成：
+
+   \`\`\`
+   protocol/snowluma/app/index.mjs
+   protocol/snowluma/app/node.exe
+   \`\`\`
+
+4. 重新运行 \`setup.bat\`（或 \`node install.mjs --mode onebot\`）——它会写入
+   OneBot 配置（127.0.0.1:3001）并开启自动接入 QQ，**不会改动协议端程序文件**。
+
+## 换别的协议端
+
+NapCat / Lagrange 也可以：让它的 OneBot 11 WebSocket 服务端监听
+\`127.0.0.1:3001\` 即可，本安装包的 DSH 侧配置不需要改。
+
+## 许可提醒
+
+- SnowLuma：个人非商业自用可以，**分发/打包/脚本化部署需书面授权**（motricseven@foxmail.com）。
+- NapCat / Lagrange：仓库无 LICENSE，默认保留所有权利，同样不宜分发。
+- 你自己用没问题；要给别人装，让对方自己从官方仓库下载。
+`
+mkdirSync(join(outDir, 'protocol'), { recursive: true })
+writeFileSync(join(outDir, 'protocol', 'README.md'), protocolReadme, 'utf8')
 
 // 2) 配置台
 mkdirSync(join(outDir, 'console', 'src'), { recursive: true })

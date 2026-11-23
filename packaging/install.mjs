@@ -102,29 +102,21 @@ if (mode === 'bridge') {
 }
 
 // ---- 协议端 -------------------------------------------------------------
-function findSnowLumaZip() {
-  if (!existsSync(PROTOCOL_DIR)) return ''
-  const zip = readdirSync(PROTOCOL_DIR).find((name) => /SnowLuma.*win-x64.*\.zip$/i.test(name))
-  return zip ? join(PROTOCOL_DIR, zip) : ''
-}
-
-const protocolZip = findSnowLumaZip()
+// 许可说明：SnowLuma / NapCat / Lagrange 的发行包都不允许被并进第三方安装包，
+// 也不允许用自动化脚本部署（SnowLuma EULA 5.4）。所以这里**只做配置**：
+// 用户自己下载并解压到 protocol/ 之后，安装器才去写它的 OneBot 配置。
+const PROTOCOL_URL = 'https://github.com/TomyJan/SnowLuma/releases'
 const protocolReady = existsSync(join(SNOWLUMA_APP, 'index.mjs'))
 
 function prepareProtocol() {
-  if (!protocolZip) {
-    log('包内没有协议端压缩包，跳过（需要你自备一个 OneBot 实现）')
+  if (!protocolReady) {
+    log('未检测到协议端（protocol/snowluma/app/index.mjs）——跳过它的配置。')
+    log(`  请自行下载（${PROTOCOL_URL}）并解压到：`)
+    log(`    ${SNOWLUMA_APP}`)
+    log('  然后重新运行本安装器，或手动把 OneBot 服务端指向 127.0.0.1:3001。')
     return
   }
-  if (protocolReady) {
-    log('协议端已解压，跳过')
-  } else {
-    log('解压协议端（SnowLuma）…')
-    mkdirSync(SNOWLUMA_APP, { recursive: true })
-    const result = spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath "${protocolZip}" -DestinationPath "${SNOWLUMA_APP}" -Force`], { encoding: 'utf8' })
-    if (result.status !== 0) fail(`解压协议端失败：${result.stderr || result.stdout || ''}`)
-    log('解压完成')
-  }
+  log('检测到已自行安装的协议端，写入 OneBot 配置（不改动它的程序文件）')
   const cfgDir = join(SNOWLUMA_APP, 'config')
   mkdirSync(cfgDir, { recursive: true })
   const onebotCfg = join(cfgDir, 'onebot.json')
@@ -164,7 +156,7 @@ log(`profile：${profileDir}`)
 
 if (dryRun) {
   log('\n[dry-run] 将要做：')
-  if (!skipProtocol && protocolZip) log(`  - 解压协议端到 ${SNOWLUMA_APP}`)
+  log(`  - 协议端配置：${protocolReady ? '已安装，写配置' : '未安装，打印下载指引'}`)
   log(`  - 建 profile 并安装 ${mode === 'onebot' ? 'dsh-onebot-qq + 皮肤层' : '旧桥接'}`)
   log(`  - 写入配置（机器人 QQ ${botQQ || '<未填>'}）`)
   if (!existsSync(personaFile)) log('  - 从示例生成 persona.md')
@@ -268,6 +260,6 @@ log(`  3. 协议端 WebUI：http://127.0.0.1:5099（初始密码在它的启动�
 log(`  4. 人设：${personaFile}`)
 log(`  5. 表情图库：${join(HERE, 'stickers')}（子目录名 = 标签）`)
 log(`  6. 长期记忆：${join(HERE, 'memory')}`)
-if (!protocolZip && mode === 'onebot') {
+if (!protocolReady && mode === 'onebot') {
   log('\n注意：包内没有协议端，你需要自备一个 OneBot 11 实现监听 127.0.0.1:3001。')
 }
