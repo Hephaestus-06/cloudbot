@@ -122,18 +122,6 @@ if (personal) {
     const text = readFileSync(setupBat, 'utf8').replace('node install.mjs --mode onebot', 'node install.mjs --mode onebot --auto-extract-protocol')
     writeFileSync(setupBat, text, 'utf8')
   }
-  writeFileSync(join(outDir, 'PERSONAL-BUILD.txt'), [
-    'PRIVATE CONVENIENCE BUILD — DO NOT REDISTRIBUTE',
-    '',
-    'This build bundles SnowLuma. Its EULA (v1.1, clause 5.4) forbids incorporating',
-    'the proprietary components into a third-party installer and deploying them via',
-    'automated scripts without prior written authorization from SnowLumaDevs',
-    '(motricseven@foxmail.com).',
-    '',
-    'Keep it for your own non-commercial use. When sharing with someone else, use the',
-    'public build (no protocol client bundled) and let them download the protocol',
-    'client from its official release page.',
-  ].join('\n') + '\n', 'utf8')
 }
 
 // 2) 配置台

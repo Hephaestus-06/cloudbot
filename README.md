@@ -146,6 +146,29 @@ BOT_CONSOLE_TOKEN=换成你的口令 docker compose up -d --build
 
 关键约束：配置台是「改文件」的工具，`docker-compose.yml` 里必须把宿主机上真实的 **profile 目录**（含 `cordis.patch.yml`）和**插件目录**（含 `persona.md`）挂进容器，否则改的是容器里的副本。见文件内注释与 [docs/SERVER-DEPLOY.md](docs/SERVER-DEPLOY.md)。
 
+## 第三方组件与许可
+
+本仓库自己的代码（`skin/`、`bridge/`、`console/`、`install.mjs`、脚本）是 **MIT**，可以自由使用、修改、分发。
+
+运行时依赖（不随本仓库分发，由 `npm` / 用户自行安装）：
+
+| 组件 | 许可 | 说明 |
+|---|---|---|
+| `@deepseek-ai/dsh`（Harness CLI） | MIT | 需要用户自己 `npm i -g` |
+| `dsh-onebot-qq` | BSD-3-Clause | 通道插件；BSD 要求保留版权声明，本表即为声明 |
+| `ws` / `fontkit` / `silk-wasm` / `@napi-rs/canvas` 等 | MIT | `dsh-onebot-qq` 的依赖树 |
+
+**协议端不在本仓库分发**，因为它们的许可都不允许：
+
+| 协议端 | 许可 | 能否随包分发 |
+|---|---|---|
+| SnowLuma | 自定义 EULA v1.1 | ❌ 5.4 条禁止并入第三方安装包、禁止脚本化部署，需书面授权 |
+| NapCatQQ | 仓库无 LICENSE | ❌ 默认保留所有权利 |
+| Lagrange.Core | 仓库无 LICENSE | ❌ 默认保留所有权利 |
+
+另外：QQ 客户端本身是腾讯的专有软件，必须由用户自己安装并登录；用非官方协议端接入
+**可能违反《QQ 用户协议》并导致账号被风控**，这个风险与软件许可无关，由使用者自行承担。
+
 ## 远程配置台
 
 一个零依赖的本地网页服务：浏览器里改人设和配置，保存即生效（写回 Harness 的配置层并触发重载）。
