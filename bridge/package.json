@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-qq-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Bridge QQ chats (OneBot 11 / NapCat) to DeepSeek Harness agent sessions",

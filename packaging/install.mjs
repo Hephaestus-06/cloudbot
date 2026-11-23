@@ -1,26 +1,31 @@
 #!/usr/bin/env node
 /**
- * cloudbot 安装器：把一个 profile 配成 QQ 机器人。
+ * cloudbot 部署器：把 QQ 机器人整套装进一个 DSH profile。
  *
- * 两种模式：
- *   node install.mjs --mode onebot --bot-qq 123456 --allow 111,222 --admin 111
- *   node install.mjs --mode bridge                        （旧方案，保留兼容）
+ * 双击 setup.bat 即可（会交互询问机器人 QQ 号）；也可以命令行：
+ *   node install.mjs --mode onebot --bot-qq 123456 --admin 123456
+ *   node install.mjs --mode onebot --dry-run         # 只看计划
+ *   node install.mjs --mode bridge                   # 旧方案（自研桥接）
  *
- * 其它参数：
- *   --profile <name>     profile 名，默认 cloudbot
- *   --dsh-home <path>    DSH 数据目录，默认 $DSH_HOME 或 ~/.dsh
- *   --dry-run            只打印计划
+ * 做四件事：
+ *   1. 解压并配置协议端（包内自带 SnowLuma 时）
+ *   2. 建 profile、装 dsh-onebot-qq + 皮肤层
+ *   3. 写配置行（机器人 QQ / 管理员 / 白名单）与人设
+ *   4. 打印启动方式
  *
- * 幂等：已有 profile 复用，已有配置不覆盖。
+ * 幂等：重复执行不会覆盖已有配置与人设。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { createInterface } from 'node:readline/promises'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SKIN = join(HERE, 'skin')
 const BRIDGE = join(HERE, 'bridge')
+const PROTOCOL_DIR = join(HERE, 'protocol')
+const SNOWLUMA_APP = join(PROTOCOL_DIR, 'snowluma', 'app')
 
 const argv = process.argv.slice(2)
 function arg(name, fallback) {
@@ -28,17 +33,29 @@ function arg(name, fallback) {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback
 }
 const dryRun = argv.includes('--dry-run')
+const skipProtocol = argv.includes('--no-protocol')
 const mode = arg('mode', 'onebot')
 const profile = arg('profile', 'cloudbot')
-const botQQ = arg('bot-qq', '')
-const adminQQ = arg('admin', '')
-const allowList = arg('allow', '')
+let botQQ = arg('bot-qq', '')
+let adminQQ = arg('admin', '')
+let allowList = arg('allow', '')
 const dshHome = resolve(arg('dsh-home', process.env.DSH_HOME || join(process.env.USERPROFILE || process.env.HOME || '.', '.dsh')))
 
 const log = (msg) => console.log(msg)
 function fail(msg) {
   console.error(`\n[错误] ${msg}\n`)
   process.exit(1)
+}
+
+async function ask(question, fallback = '') {
+  if (!process.stdin.isTTY) return fallback
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = (await rl.question(question)).trim()
+    return answer || fallback
+  } finally {
+    rl.close()
+  }
 }
 
 // ---- 环境 ---------------------------------------------------------------
@@ -68,37 +85,94 @@ if (dshVersion.status !== 0) {
 }
 log(`DSH CLI：${String(dshVersion.stdout).trim()}`)
 
+// ---- 交互输入 -----------------------------------------------------------
+if (mode === 'onebot' && !botQQ && !dryRun) {
+  log('\n请输入机器人账号信息（直接回车用方括号里的默认值）：')
+  botQQ = await ask('  机器人 QQ 号：')
+  if (!botQQ) fail('机器人 QQ 号必须有')
+  adminQQ = adminQQ || (await ask(`  管理员 QQ 号（你自己）[${botQQ}]：`, botQQ))
+  allowList = allowList || (await ask(`  允许私聊的 QQ，逗号分隔 [${adminQQ}]：`, adminQQ))
+}
+
 if (mode === 'bridge') {
   if (!existsSync(join(BRIDGE, 'index.js'))) fail(`找不到旧桥接插件：${BRIDGE}`)
 } else {
   if (!existsSync(join(SKIN, 'index.js'))) fail(`找不到皮肤插件：${SKIN}`)
-  if (!botQQ) fail('--mode onebot 需要 --bot-qq <机器人QQ号>')
+  if (!botQQ && !dryRun) fail('缺少机器人 QQ 号（--bot-qq）')
 }
 
+// ---- 协议端 -------------------------------------------------------------
+function findSnowLumaZip() {
+  if (!existsSync(PROTOCOL_DIR)) return ''
+  const zip = readdirSync(PROTOCOL_DIR).find((name) => /SnowLuma.*win-x64.*\.zip$/i.test(name))
+  return zip ? join(PROTOCOL_DIR, zip) : ''
+}
+
+const protocolZip = findSnowLumaZip()
+const protocolReady = existsSync(join(SNOWLUMA_APP, 'index.mjs'))
+
+function prepareProtocol() {
+  if (!protocolZip) {
+    log('包内没有协议端压缩包，跳过（需要你自备一个 OneBot 实现）')
+    return
+  }
+  if (protocolReady) {
+    log('协议端已解压，跳过')
+  } else {
+    log('解压协议端（SnowLuma）…')
+    mkdirSync(SNOWLUMA_APP, { recursive: true })
+    const result = spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath "${protocolZip}" -DestinationPath "${SNOWLUMA_APP}" -Force`], { encoding: 'utf8' })
+    if (result.status !== 0) fail(`解压协议端失败：${result.stderr || result.stdout || ''}`)
+    log('解压完成')
+  }
+  const cfgDir = join(SNOWLUMA_APP, 'config')
+  mkdirSync(cfgDir, { recursive: true })
+  const onebotCfg = join(cfgDir, 'onebot.json')
+  if (!existsSync(onebotCfg)) {
+    writeFileSync(onebotCfg, `${JSON.stringify({
+      networks: {
+        httpServers: [],
+        httpClients: [],
+        wsServers: [{
+          name: 'ws-default',
+          host: '127.0.0.1',
+          port: 3001,
+          path: '/',
+          role: 'Universal',
+          accessToken: '',
+          messageFormat: 'array',
+          reportSelfMessage: false,
+        }],
+        wsClients: [],
+      },
+    }, null, 2)}\n`, 'utf8')
+    log('已写协议端 OneBot 配置（127.0.0.1:3001）')
+  }
+  const runtimeCfg = join(cfgDir, 'runtime.json')
+  if (!existsSync(runtimeCfg)) {
+    writeFileSync(runtimeCfg, `${JSON.stringify({ webuiPort: 5099, webuiHost: '127.0.0.1', hookAutoLoad: true }, null, 2)}\n`, 'utf8')
+    log('已开启协议端自动接入 QQ')
+  }
+}
+
+// ---- profile ------------------------------------------------------------
 const profileDir = join(dshHome, 'profiles', profile)
 const pkgFile = join(profileDir, 'package.json')
 const patchFile = join(profileDir, 'cordis.patch.yml')
 const personaFile = join(HERE, 'persona.md')
 log(`profile：${profileDir}`)
 
-const plan = []
-if (!existsSync(profileDir)) plan.push(`创建目录 ${profileDir}`)
-plan.push(`写入 package.json 依赖与 bundles`)
-if (mode === 'onebot') {
-  plan.push(`安装 dsh-onebot-qq@0.11.0 与 link:${SKIN}`)
-  plan.push(`写入 dsh-onebot / cloudbot-skin 配置行`)
-} else {
-  plan.push(`安装 link:${BRIDGE}`)
-}
-if (!existsSync(personaFile)) plan.push(`从 bridge/persona.example.md 生成 persona.md`)
-
 if (dryRun) {
   log('\n[dry-run] 将要做：')
-  for (const step of plan) log(`  - ${step}`)
+  if (!skipProtocol && protocolZip) log(`  - 解压协议端到 ${SNOWLUMA_APP}`)
+  log(`  - 建 profile 并安装 ${mode === 'onebot' ? 'dsh-onebot-qq + 皮肤层' : '旧桥接'}`)
+  log(`  - 写入配置（机器人 QQ ${botQQ || '<未填>'}）`)
+  if (!existsSync(personaFile)) log('  - 从示例生成 persona.md')
   process.exit(0)
 }
 
-// ---- profile 骨架 -------------------------------------------------------
+if (!skipProtocol) prepareProtocol()
+
 mkdirSync(profileDir, { recursive: true })
 let pkg = { name: `dsh-profile-${profile}`, private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }
 if (existsSync(pkgFile)) {
@@ -110,16 +184,14 @@ if (existsSync(pkgFile)) {
 }
 pkg.dependencies = pkg.dependencies ?? {}
 
-// ---- 人设 ---------------------------------------------------------------
 if (!existsSync(personaFile)) {
-  const example = join(BRIDGE, 'persona.example.md')
+  const example = join(BRIDGE, 'persona.example.md') 
   if (existsSync(example)) {
     writeFileSync(personaFile, readFileSync(example, 'utf8'), 'utf8')
     log('已从示例生成 persona.md')
   }
 }
 
-// ---- 安装依赖 -----------------------------------------------------------
 const packages = mode === 'onebot'
   ? [{ spec: 'dsh-onebot-qq@0.11.0' }, { spec: `link:${SKIN.replace(/\\/g, '/')}` }]
   : [{ spec: `link:${BRIDGE.replace(/\\/g, '/')}` }]
@@ -134,7 +206,6 @@ for (const entry of packages) {
   }
 }
 
-// 插件自己会把 bundle 加进 bundles；这里补齐宿主必需的两个并做兜底
 const bundles = new Set((JSON.parse(readFileSync(pkgFile, 'utf8')).dsh?.profile?.bundles ?? []))
 bundles.add('@deepseek-ai/dsh-base')
 bundles.add('@deepseek-ai/dsh-web-app')
@@ -151,7 +222,7 @@ writeFileSync(pkgFile, `${JSON.stringify(current, null, 2)}\n`, 'utf8')
 if (mode === 'onebot') {
   let patch = existsSync(patchFile) ? readFileSync(patchFile, 'utf8') : '[]\n'
   if (!patch.includes('id: dsh-onebot')) {
-    const allow = allowList ? allowList.split(/[,\s]+/).filter(Boolean) : (adminQQ ? [adminQQ] : [])
+    const allow = allowList ? allowList.split(/[,\s，]+/).filter(Boolean) : (adminQQ ? [adminQQ] : [])
     const admins = adminQQ ? [adminQQ] : []
     const block = `
 # === cloudbot：dsh-onebot-qq 通道 + 皮肤层 ===
@@ -189,9 +260,14 @@ if (mode === 'onebot') {
   }
 }
 
-log('\n安装完成。下一步：')
-log(`  1. 让协议端（NapCat 等）的 OneBot WebSocket 监听 127.0.0.1:3001`)
-log(`  2. 启动：dsh ${profile}`)
-log(`  3. 人设：${personaFile}`)
-log(`  4. 表情图库：${join(HERE, 'stickers')}（子目录名 = 标签）`)
-log(`  5. 长期记忆：${join(HERE, 'memory')}`)
+// ---- 完成 ---------------------------------------------------------------
+log('\n部署完成。下一步：')
+log(`  1. 确保电脑上装了 QQ 并已登录 ${botQQ}`)
+log(`  2. 双击 start.bat 启动（会拉起协议端和 DSH）`)
+log(`  3. 协议端 WebUI：http://127.0.0.1:5099（初始密码在它的启动窗口里）`)
+log(`  4. 人设：${personaFile}`)
+log(`  5. 表情图库：${join(HERE, 'stickers')}（子目录名 = 标签）`)
+log(`  6. 长期记忆：${join(HERE, 'memory')}`)
+if (!protocolZip && mode === 'onebot') {
+  log('\n注意：包内没有协议端，你需要自备一个 OneBot 11 实现监听 127.0.0.1:3001。')
+}

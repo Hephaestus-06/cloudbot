@@ -31,7 +31,40 @@ docs/                配置台说明、迁移方案、服务器部署草稿
 
 配置台和这两个插件是独立的东西：前者是「改配置的界面」，后两者是「真正在跑消息的东西」。
 
-## 打包与安装
+## 部署包（一个包完成部署）
+
+发布包 `cloudbot-<version>.zip` **自带协议端**，目标机器上只需要：
+
+```text
+1. 装好 QQ 并登录机器人账号
+2. 解压 zip 到任意目录
+3. 双击 setup.bat  → 按提示输入机器人 QQ 号和你的 QQ 号
+4. 双击 start.bat  → 拉起协议端 + 机器人
+```
+
+包里有什么：
+
+```
+setup.bat      一键部署（解压协议端 → 建 profile → 装插件 → 写配置 → 生成人设）
+start.bat      启动（协议端 + DSH）
+stop.bat       停止
+selftest.bat   自检（端口 / 插件 / 人设 / 图库 / 记忆）
+protocol/      协议端（SnowLuma win-x64，41 MB）
+skin/          皮肤层插件（人设 / 记忆 / 好感度 / 表情包）
+stickers/      表情图库（子目录名 = 标签）
+persona.example.md  人设模板
+console/       配置台（改人设 / 看状态 / 传表情）
+docs/          迁移说明、运维手册
+```
+
+**两个无法打进包的东西**：
+
+- **QQ 客户端本身**（几 GB，且必须在官方客户端里登录）；
+- 账号登录态（首次要在 QQ 里登录一次；之后协议端会复用）。
+
+想换协议端：包里 `protocol/` 换成 NapCat/Lagrange 的解压目录即可，DSH 侧配置不用改（都是 `127.0.0.1:3001`）。
+
+## 打包与安装（开发）
 
 **打包**（开发机上）：
 
@@ -40,17 +73,18 @@ node scripts/package.mjs
 ```
 
 产出 `dist/cloudbot-<version>/` 和同名 zip（含 `manifest.json`，记录每个文件的 sha256）。
+默认会把 `.private/snowluma/` 下的 SnowLuma zip 一起打进去；设 `CLOUDBOT_PROTOCOL_ZIP=<路径>` 可指定别的协议端包。
 
-**安装**（目标机器上）：
+**命令行安装**（不想用 setup.bat 时）：
 
 ```bash
-unzip cloudbot-0.2.0.zip -d cloudbot && cd cloudbot
-node install.mjs --profile cloudbot     # 加 --dry-run 只看计划
-dsh cloudbot                            # 启动
+unzip cloudbot-0.3.0.zip -d cloudbot && cd cloudbot
+node install.mjs --mode onebot --bot-qq <机器人QQ> --admin <你的QQ>   # 加 --dry-run 只看计划
+dsh cloudbot
 ```
 
-安装器会：检查 Node ≥ 20 → 建 profile 骨架 → 写入 bundles → `dsh plugin add link:bridge` → 从示例生成 `persona.md`。
-重复执行是幂等的，不会覆盖已有配置和人设。
+安装器会：检查 Node ≥ 20 → 解压协议端并写 OneBot 配置 → 建 profile → 装 `dsh-onebot-qq` + 皮肤层 →
+写配置行 → 从示例生成 `persona.md`。重复执行是幂等的，不会覆盖已有配置和人设。
 
 ## 怎么启动
 

@@ -9,7 +9,7 @@
  */
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -55,6 +55,32 @@ if (existsSync(join(ROOT, 'bridge', 'stickers'))) {
 // 1d) 人设模板
 if (existsSync(join(ROOT, 'bridge', 'persona.example.md'))) {
   copyFileSync(join(ROOT, 'bridge', 'persona.example.md'), join(outDir, 'persona.example.md'))
+}
+
+// 1e) 部署脚本（setup / start / stop / selftest）
+mkdirSync(join(outDir, 'scripts'), { recursive: true })
+for (const bat of ['setup.bat', 'start.bat', 'stop.bat', 'selftest.bat']) {
+  const from = join(ROOT, 'packaging', bat)
+  if (existsSync(from)) copyFileSync(from, join(outDir, bat))
+}
+if (existsSync(join(ROOT, 'scripts', 'selftest-onebot.mjs'))) {
+  copyFileSync(join(ROOT, 'scripts', 'selftest-onebot.mjs'), join(outDir, 'scripts', 'selftest-onebot.mjs'))
+}
+
+// 1f) 协议端（可选：把本地下载好的 SnowLuma 打进包，实现"一个包完成部署"）
+function findProtocolZip() {
+  const fromEnv = process.env.CLOUDBOT_PROTOCOL_ZIP
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  const dir = join(ROOT, '.private', 'snowluma')
+  if (!existsSync(dir)) return ''
+  const name = readdirSync(dir).find((entry) => /SnowLuma.*win-x64.*\.zip$/i.test(entry))
+  return name ? join(dir, name) : ''
+}
+const protocolZip = findProtocolZip()
+if (protocolZip) {
+  mkdirSync(join(outDir, 'protocol'), { recursive: true })
+  copyFileSync(protocolZip, join(outDir, 'protocol', basename(protocolZip)))
+  console.log(`  + protocol client: ${basename(protocolZip)}`)
 }
 
 // 2) 配置台

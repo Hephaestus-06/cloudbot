@@ -437,11 +437,15 @@ export function apply(ctx, rawConfig) {
         order: 900,
         text: () => memoryBlock(chatKey),
       }))
-      // 分段提示：宿主插件默认把整段回复合成一条消息，想"连发几条"要用它的分段工具。
+      // 分段提示：宿主默认把整段回复合成一条消息；要"一句一条"就必须调它的分段工具。
       disposers.push(systemPrompt.context({
         name: 'cloudbot:segments-hint',
         order: 901,
-        text: () => `（想连发几条短消息营造聊天感时，用 qq_send_segments 工具；普通回复保持一两句，别写长段落。）`,
+        text: () => [
+          '【怎么说话】每次回复都调用 qq_send_segments，把你这一轮要说的话拆成 1–4 条短句（通常每条就一句话，像在 QQ 上连发几条消息）。',
+          '调用工具后不要再用正文重复同样的话——正文留空，或者只补半句。',
+          '例外：整轮只想回一个字或一个表情时，直接输出正文即可。',
+        ].join('\n'),
       }))
     }
 
