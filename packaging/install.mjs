@@ -103,20 +103,40 @@ if (mode === 'bridge') {
 
 // ---- 协议端 -------------------------------------------------------------
 // 许可说明：SnowLuma / NapCat / Lagrange 的发行包都不允许被并进第三方安装包，
-// 也不允许用自动化脚本部署（SnowLuma EULA 5.4）。所以这里**只做配置**：
-// 用户自己下载并解压到 protocol/ 之后，安装器才去写它的 OneBot 配置。
+// 也不允许用自动化脚本部署（SnowLuma EULA 5.4）。
+// 默认**只做配置**；只有「个人自用包」（setup.bat 带 --auto-extract-protocol）
+// 才会解压随包携带的那份——那种包不许对外分发。
 const PROTOCOL_URL = 'https://github.com/TomyJan/SnowLuma/releases'
+const autoExtract = argv.includes('--auto-extract-protocol')
 const protocolReady = existsSync(join(SNOWLUMA_APP, 'index.mjs'))
 
+function findProtocolZip() {
+  if (!existsSync(PROTOCOL_DIR)) return ''
+  const zip = readdirSync(PROTOCOL_DIR).find((name) => /\.zip$/i.test(name))
+  return zip ? join(PROTOCOL_DIR, zip) : ''
+}
+
 function prepareProtocol() {
-  if (!protocolReady) {
+  if (!protocolReady && autoExtract) {
+    const zip = findProtocolZip()
+    if (!zip) {
+      log('没有随包携带协议端压缩包，跳过解压')
+    } else {
+      log(`解压随包协议端：${zip.split(/[\\/]/).pop()}`)
+      mkdirSync(SNOWLUMA_APP, { recursive: true })
+      const result = spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath "${zip}" -DestinationPath "${SNOWLUMA_APP}" -Force`], { encoding: 'utf8' })
+      if (result.status !== 0) fail(`解压协议端失败：${result.stderr || result.stdout || ''}`)
+      log('解压完成')
+    }
+  }
+  if (!existsSync(join(SNOWLUMA_APP, 'index.mjs'))) {
     log('未检测到协议端（protocol/snowluma/app/index.mjs）——跳过它的配置。')
     log(`  请自行下载（${PROTOCOL_URL}）并解压到：`)
     log(`    ${SNOWLUMA_APP}`)
     log('  然后重新运行本安装器，或手动把 OneBot 服务端指向 127.0.0.1:3001。')
     return
   }
-  log('检测到已自行安装的协议端，写入 OneBot 配置（不改动它的程序文件）')
+  log('检测到协议端，写入 OneBot 配置（不改动它的程序文件）')
   const cfgDir = join(SNOWLUMA_APP, 'config')
   mkdirSync(cfgDir, { recursive: true })
   const onebotCfg = join(cfgDir, 'onebot.json')

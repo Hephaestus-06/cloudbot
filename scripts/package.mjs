@@ -2,10 +2,11 @@
 /**
  * 打出可分发的发布包：dist/cloudbot-<version>/ 以及同名 zip。
  *
- *   node scripts/package.mjs
+ *   node scripts/package.mjs                 # 公开版：不含任何第三方协议端
+ *   node scripts/package.mjs --with-protocol # 个人自用版：携带 SnowLuma 并自动解压
  *
- * 内容：bridge（插件+图库）、console（配置台）、install.mjs、README、LICENSE。
- * 同时生成 manifest.json（版本、构建时间、每个文件的 sha256）。
+ * --with-protocol 产物**不可对外分发**：SnowLuma EULA 5.4 禁止并入第三方安装包。
+ * 个人版输出在 dist/personal/，与公开版完全隔离。
  */
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -17,8 +18,11 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const DIST = join(ROOT, 'dist')
 
 const version = JSON.parse(readFileSync(join(ROOT, 'bridge', 'package.json'), 'utf8')).version
-const outDir = join(DIST, `cloudbot-${version}`)
-const zipPath = join(DIST, `cloudbot-${version}.zip`)
+const withProtocol = process.argv.includes('--with-protocol')
+const personal = withProtocol
+const baseName = personal ? `cloudbot-${version}-personal` : `cloudbot-${version}`
+const outDir = personal ? join(DIST, 'personal', baseName) : join(DIST, baseName)
+const zipPath = personal ? join(DIST, 'personal', `${baseName}.zip`) : join(DIST, `${baseName}.zip`)
 
 rmSync(outDir, { recursive: true, force: true })
 rmSync(zipPath, { force: true })
@@ -102,6 +106,35 @@ NapCat / Lagrange 也可以：让它的 OneBot 11 WebSocket 服务端监听
 `
 mkdirSync(join(outDir, 'protocol'), { recursive: true })
 writeFileSync(join(outDir, 'protocol', 'README.md'), protocolReadme, 'utf8')
+
+// 个人自用版：携带本地已下载的协议端并允许自动解压
+if (personal) {
+  const source = join(ROOT, '.private', 'snowluma')
+  const zipName = existsSync(source) ? readdirSync(source).find((entry) => /SnowLuma.*win-x64.*\.zip$/i.test(entry)) : ''
+  if (zipName) {
+    copyFileSync(join(source, zipName), join(outDir, 'protocol', zipName))
+    console.log(`  + bundled protocol (personal build): ${zipName}`)
+  } else {
+    console.log('  ! 没有找到 SnowLuma zip（.private/snowluma），个人版不含协议端')
+  }
+  const setupBat = join(outDir, 'setup.bat')
+  if (existsSync(setupBat)) {
+    const text = readFileSync(setupBat, 'utf8').replace('node install.mjs --mode onebot', 'node install.mjs --mode onebot --auto-extract-protocol')
+    writeFileSync(setupBat, text, 'utf8')
+  }
+  writeFileSync(join(outDir, 'PERSONAL-BUILD.txt'), [
+    'PRIVATE CONVENIENCE BUILD — DO NOT REDISTRIBUTE',
+    '',
+    'This build bundles SnowLuma. Its EULA (v1.1, clause 5.4) forbids incorporating',
+    'the proprietary components into a third-party installer and deploying them via',
+    'automated scripts without prior written authorization from SnowLumaDevs',
+    '(motricseven@foxmail.com).',
+    '',
+    'Keep it for your own non-commercial use. When sharing with someone else, use the',
+    'public build (no protocol client bundled) and let them download the protocol',
+    'client from its official release page.',
+  ].join('\n') + '\n', 'utf8')
+}
 
 // 2) 配置台
 mkdirSync(join(outDir, 'console', 'src'), { recursive: true })
