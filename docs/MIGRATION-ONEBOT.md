@@ -82,36 +82,57 @@ cp backup/cordis.patch.yml  ~/.dsh/profiles/desktop/cordis.patch.yml
 3001 端口连接随即由旧插件接管（连接数 1）；再反向切回，`dsh-onebot-qq` 重新连上，`get_status` 仍为 online。
 两个方向都不需要改配置、不需要重启应用，只需切换 bundle 的启用状态。
 
-## 协议端（NapCat → Lagrange）
+## 协议端（SnowLuma / NapCat / Lagrange）
 
-**已准备好，等待一次扫码切换**（2026-11-22）。
+三种实现都监听同一个 `127.0.0.1:3001`，**DSH 侧配置不用改**，切换只换进程。
 
-Lagrange.OneBot 的自包含 Windows 二进制已经下载并配置好：
+### 当前：SnowLuma（2026-11-23 已切换并验证）
 
 | 项 | 值 |
 |---|---|
-| 版本 | nightly（自包含 .NET 9，单文件 79 MB） |
-| 位置 | `.private/lagrange/run/`（zip 与解压产物都在 `.private`，不进仓库） |
-| 账号 | `appsettings.json` 里 `Account.Uin` 已填 |
-| OneBot | `ForwardWebSocket` 监听 `127.0.0.1:3001`（与 NapCat 相同，DSH 侧无需改配置） |
+| 版本 | v2.4.2（`TomyJan/SnowLuma` 发行版，win-x64 41 MB） |
+| 位置 | `.private/snowluma/`（自带 node 24.22.1） |
+| WebUI | `http://127.0.0.1:5099`（初始密码在启动日志，首次登录要改） |
+| 接入方式 | 需要一个**已登录的 QQ 客户端进程**；`hookAutoLoad: true` 时自动注入 |
+| OneBot | `config/onebot.json`：`ws-default` → `127.0.0.1:3001`，`accessToken: ""` |
 
-切换脚本（在 `.private/lagrange/`，**管理员运行**）：
+实测日志（切换当天）：
 
-```bat
-switch-to-lagrange.bat     :: 停 NapCat → 启动 Lagrange（控制台会打印二维码）
-switch-back-to-napcat.bat  :: 停 Lagrange → 重新拉起 NapCat 计划任务
+```
+[Hook] login detected: PID=105924 UIN=300000001
+[OneBot.WS-Server] [ws-default] listening 127.0.0.1:3001/
+[Bridge] friends loaded: count=4
+get_status -> online: true
 ```
 
-切换后要做的事：
+启动/回滚脚本（`.private/snowluma/`）：
 
-1. 在 Lagrange 的窗口里用手机扫码登录；
-2. 看到登录成功后，DSH 的 `dsh-onebot` 会自动重连 3001（无需改配置）；
-3. 发一条消息验证；有问题就跑 `switch-back-to-napcat.bat` 回滚。
+```bat
+start-snowluma.bat            :: 启动（需先让 QQ 客户端登录着）
+switch-back-to-napcat.bat     :: 杀 SnowLuma → 拉起 NapCat 计划任务
+```
 
-**为什么要谨慎**：Lagrange 同样是第三方 NTQQ 协议实现，换客户端会重新走一次登录风控。当前账号今天已经被风控过（先禁登录、后禁发送），建议：
+**注意**：SnowLuma 与 NapCat 都是注入 NTQQ 进程的实现，**不能同时挂同一个 QQ**；切换前要停掉另一个。
 
-- 先用**小号**验证 Lagrange 能否登录、能否收发；
-- 主号留在 NapCat 上，直到小号验证通过。
+### 备选：Lagrange（纯协议实现，不需要 QQ 客户端）
 
-**已知限制**：Lagrange.OneBot 需要真实控制台（无控制台会因 `Console.get_BufferWidth` 抛异常崩溃），所以不能以后台服务方式静默运行，必须以窗口形式启动（或用 ConPTY 包装）。
+已下载并配置好（`.private/lagrange/`，`Uin` + `ForwardWebSocket 3001`），但**这版只支持扫码登录**
+（配置模板没有 `Password` 字段，二进制里也找不到密码登录的绑定）。
 
+```bat
+switch-to-lagrange.bat     :: 停 NapCat → 启动 Lagrange（控制台打印二维码）
+```
+
+**限制**：Lagrange.OneBot 需要真实控制台，无控制台会因 `Console.get_BufferWidth` 崩溃；不能后台静默运行。
+
+### 回滚到 NapCat
+
+```bat
+switch-back-to-napcat.bat  :: 杀掉当前协议端 → schtasks /run /tn NapCatQQ
+```
+
+NapCat 的账号密码存在 `napcat-login.txt`，票据失效时会自动回退密码登录。
+
+**回滚演练（2026-11-22 已验证）**：线上把 `dsh-onebot-qq` 停用、重新启用 `@local/dsh-qq-bridge`，
+3001 端口连接随即由旧插件接管（连接数 1）；再反向切回，`dsh-onebot-qq` 重新连上，`get_status` 仍为 online。
+两个方向都不需要改配置、不需要重启应用，只需切换 bundle 的启用状态。
